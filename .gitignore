@@ -137,3 +137,15 @@ _research/
 # 这里同时把它们移出索引，免得每次跑测试都看见两份没人读的改动。
 /tests/.tmp-repo-out/
 /tests/.tmp-repo-out2/
+
+# ===== fork 分发：把构建产物纳入 git，让 github:...#main 直接可安装 =====
+# 上游设计是产物不入库（构建生成）；但 fork 用 GitHub spec 分发时，clone 出来的是源码树，
+# 没有产物就装成空壳（lib/index.js 缺失）。这里按 fork 的用途覆盖上面的排除规则，
+# 只放开 npm pack 白名单里的那几个产物目录；源码真源与上游构建约定不变。
+!/package/lib/
+!/package/scripts/
+!/package/shared/
+!/package/deck/
+!/package/tracker/
+!/package/refresh/
+!/package/workspace-snapshot/
