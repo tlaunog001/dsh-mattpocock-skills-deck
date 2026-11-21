@@ -100,6 +100,8 @@ async function main() {
     check(r.ok === false && r.kind === 'workspace-file-failed', 'A 两个活会话、不带会话号：如实回失败（不再回 ok）', JSON.stringify({ ok: r.ok, kind: r.kind }))
     check(r.errorKind === 'no-session-permit', 'A 失败原因分到「没拿到会话许可」这一档（不是磁盘只读）', String(r.errorKind))
     check(/没拿到这次请求的会话号/.test(String(r.error)), 'A 失败提示说清为什么：宿主不知道这次写入算哪个会话的', String(r.error))
+    check(!/请确认这个目录可以写/.test(String(r.error)), 'A 会话许可档不再误导用户去检查目录权限（目录往往是可写的）', String(r.error))
+    check(/重新点一次|重新建立了会话/.test(String(r.error)), 'A 会话许可档给出正确下一步：在当前会话重试 / 重启后重建会话', String(r.error))
     check(!fs.existsSync(wsFile(dir)), 'A 确实一个字都没写进工作区文件')
     check(!h.placed.length, 'A 写文件都没成，就不往下走配色那一步')
     check(h.events.some((e) => e.event === 'host.call.fail' && e.fields && e.fields.method === 'wf.bind' && e.fields.errorKind === 'no-session-permit'), 'A 日志里记下这一趟失败与原因档（可事后排查）')
@@ -134,6 +136,7 @@ async function main() {
     const h = mkApi(dir, [session('s1', dir), session('s2', dir)])
     const r = await h.api.handleBind({ cwd: dir, backendId: 'github', sessionId: 'gone' })
     check(r.ok === false && r.errorKind === 'no-session-permit' && !fs.existsSync(wsFile(dir)), 'E 不存在的会话号不会被别的会话顶替：如实失败', JSON.stringify({ ok: r.ok, errorKind: r.errorKind }))
+    check(!/请确认这个目录可以写/.test(String(r.error)), 'E 会话失配也不误导去检查目录权限', String(r.error))
   }
   // F：工作区名下只有子代理会话 —— 它的权限来自父会话，不能替用户这一趟借写入许可
   {

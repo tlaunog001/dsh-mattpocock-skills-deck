@@ -15,11 +15,19 @@ function fileWriteReasonOf(e: any) { const s = String((e && (e.code || e.message
  * 分档口径与 fileWriteReasonOf 同一份，不另判一次；认不出来的那档照实说「写入这一步报了错」，不编具体原因。
  */
 function bindFailAdviceOf(reason: any) {
-  if (reason === 'no-permit') return '这个工作区不在本次会话允许写入的范围内'
+  if (reason === 'no-permit') return '这次写入被本次会话的写入许可挡住了（不是目录不可写）'
   if (reason === 'no-session-permit') return '宿主没拿到这次请求的会话号（或那个会话已经不在了），没法确认这次写入的许可'
   if (reason === 'readonly') return '这个工作区所在的磁盘是只读的'
   if (reason === 'no-dir') return '工作区里的 docs/agents 这个目录建不出来'
   return '写入这一步报了错'
+}
+// 失败原因不同，下一步动作也不同：会话许可档绝不提「检查目录能不能写」——目录往往是可写的，
+//   被拒的是插件那条带会话许可的写入通道。把人引去查目录权限会把排查方向整体带偏（本票实测）。
+function bindNextStepOf(reason: any) {
+  if (reason === 'no-permit' || reason === 'no-session-permit') return '请在这个会话里重新点一次；如果刚重启过 DSH，先确认这个工作区已经重新建立了会话'
+  if (reason === 'readonly') return '请确认这个目录所在的磁盘可以写，然后重新选一次'
+  if (reason === 'no-dir') return '请确认这个目录存在且可写，然后重新选一次'
+  return '请重新选一次'
 }
 // #1074 转制类型：Ctx.get 取出来按 any 用（框架服务晚到是既有语义，运行时处处有 typeof 守卫）；
 // WfArgs 是客户端 JSON 的边界，入口电话只负责原样转交。
@@ -129,7 +137,7 @@ export function createWorkspaceCwd(deps: Deps) {
         return {
           ok: false, kind: 'workspace-file-failed', cwd: cwd, backendId: backendId, workspaceFile: workspaceFile,
           errorKind: _whyCode,
-          error: '这次没能把选择写进这个工作区里的配置文件（' + bindFailAdviceOf(_whyCode) + '），所以这次选择没有生效。请确认这个目录可以写，然后重新选一次。',
+          error: '这次没能把选择写进这个工作区里的配置文件（' + bindFailAdviceOf(_whyCode) + '），所以这次选择没有生效。' + bindNextStepOf(_whyCode) + '。',
         }
       }
       // 落到这里才算生效：清三处缓存，顺手放配色文件，再补一份本机记忆（H）——H 只是「文件万一被删还能再生成一次」的备份，不参与判定。
