@@ -262,6 +262,14 @@ export function createSkillProbe(deps?: any): any {
         if (isOffRoot && foundPath) {
           const srcLine = (lang === 'en') ? ' (source: ' + foundPath + ')' : '（来源：' + foundPath + '）'
           detail = detail + srcLine
+        } else if (foundPath) {
+          // #1973：用户级 ~/.agents/skills 里的旧副本会优先于随包新版被加载，且不会触发安装引导，
+          //   存量用户因此拿不到随包修正（如 GLOSSARY 改名）。这里不触盘、不算 hash（守 skillProbe
+          //   “只认注册表”的纪律），只在标准根命中时给一句可操作的核对提示，让遮蔽变得可见。
+          const note = (lang === 'en')
+            ? ' (if this is an older user-level copy, it may shadow the bundled version — compare it with the bundled skills)'
+            : '（若是较旧的用户级副本，可能遮蔽随包新版，请与随包技能核对）'
+          detail = detail + note
         }
         try { resetSkillPendingState(skillName) } catch {}
         return { ok: true, level: 'ok', detail, hint, sourcePath: foundPath || undefined, repo: null, channels: [{ channel: 'registry', root: 'registry', result: 'hit', detail: foundPath || '' }] }

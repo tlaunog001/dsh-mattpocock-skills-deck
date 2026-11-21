@@ -302,6 +302,9 @@ function createSkillProbe(deps) {
       if (isOffRoot && foundPath) {
         const srcLine = lang === "en" ? " (source: " + foundPath + ")" : "（来源：" + foundPath + "）";
         detail = detail + srcLine;
+      } else if (foundPath) {
+        const note = lang === "en" ? " (if this is an older user-level copy, it may shadow the bundled version — compare it with the bundled skills)" : "（若是较旧的用户级副本，可能遮蔽随包新版，请与随包技能核对）";
+        detail = detail + note;
       }
       try {
         resetSkillPendingState(skillName);
