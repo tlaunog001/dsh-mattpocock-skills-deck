@@ -18,7 +18,7 @@
 // 本域 tsconfig 有意不加载任何类型包（types 为空），Node 内建模块的类型声明随 @types/node 一起被挡在门外；
 // 运行时一定是 Node，这些模块必然存在。与 rpcChannel.ts 同一处理：只忽略导入行的类型错误，不影响转译。
 // @ts-expect-error
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 // @ts-expect-error
 import path from 'node:path'
 // @ts-expect-error
@@ -26,12 +26,8 @@ import { fileURLToPath } from 'node:url'
 
 const cache = new Map<string, boolean>()
 
-/** 随包同名技能 SKILL.md 的候选位置：插件安装目录下的 bundled-skills / bundled-skills-zh。 */
+/** 随包同名技能 SKILL.md 的候选位置：装机产物与源码树两种布局都要认。 */
 function bundledCardPaths(skillName: string): string[] {
-  // 两种布局都要认：
-  //   装机产物 <pkg>/lib/skillStaleCopy.js       → 随包目录在 <pkg>/bundled-skills/
-  //   源码树   <repo>/src/host/skillStaleCopy.ts → 随包目录在 <repo>/package/bundled-skills/
-  // 只认前者会让源码树里的测试读不到随包名片，判定恒 false。
   const here = path.dirname(fileURLToPath(import.meta.url))
   const roots = [
     path.dirname(here),
@@ -45,32 +41,49 @@ function bundledCardPaths(skillName: string): string[] {
   return out
 }
 
+/** 读一份名片；读不到回 null（调用方据此"不判"，不据此"判新"）。 */
+function readCard(p: string): string | null {
+  try { return readFileSync(p, 'utf8') } catch { return null }
+}
+
+/** 换行归一后判等：跨平台检出/复制会改 CRLF，那不是内容漂移。 */
+function sameContent(a: string, b: string): boolean {
+  return a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n')
+}
+
 /**
- * 这个技能的「用户级副本」是否确实比随包旧（只在能确证时返回 true）。
+ * 这个技能的「用户级副本」是否比随包旧。
+ *
+ * 判据（#1973 第二轮修正）：**内容比对**，不是特征词。
+ *   上一版只看「随包含 GLOSSARY 而用户级不含」，等于把一次具体事故（#1206 改名）编码成了检测条件——
+ *   凡是没被那次改名波及的技能（wayfinder / code-review / grilling …）永远不会被判陈旧，
+ *   而它们同样会漂移（下游实测 25 个技能里 24 个的 SKILL.md 与随包不一致，其中就包括它们）。
+ *   现在直接比 SKILL.md 的内容：与随包同名名片不一致即为陈旧。这样覆盖面自动扩到全部技能、
+ *   以及未来任何改名或流程修正，不需要维护清单。
+ *
+ * 仍然「不触盘判绿」：本函数是 skillProbe 之外的独立模块，由装配点注入；skillProbe 只拿布尔值。
+ *
  * @param skillName 技能名
  * @param foundPath 注册表给出的命中路径（技能目录，或目录下的 SKILL.md）
  */
 export function isStaleUserCopy(skillName: unknown, foundPath: unknown): boolean {
   const name = String(skillName || '')
   if (!name) return false
-  // 缓存键带命中路径：同一技能可能先从标准根命中、后从随包目录命中（换后端/换安装位置），
-  //   只按技能名缓存会把前一次的结论错误地套到后一次上。
-  const key = name + '|' + String(foundPath || '')
+  const dir = path.dirname(String(foundPath || ''))
+  const mine = readCard(path.join(dir, 'SKILL.md'))
+  // 读不到用户级名片：无从判断，不判陈旧（宁可少提示，不误报）。
+  if (mine === null) return false
+  // 缓存键带用户副本的 mtime：下游按提示刷新过 ~/.agents/skills 之后，不重启也能自动转绿。
+  let stamp = ''
+  try { stamp = String(statSync(path.join(dir, 'SKILL.md')).mtimeMs) } catch { stamp = '0' }
+  const key = name + '|' + String(foundPath || '') + '|' + stamp
   if (cache.has(key)) return cache.get(key) === true
   let stale = false
   try {
-    let buddy = ''
-    for (const p of bundledCardPaths(name)) {
-      try { buddy = readFileSync(p, 'utf8'); break } catch {}
-    }
-    // 随包没有这个技能（自定义技能）或随包也不用 GLOSSARY：无从判断，不判陈旧。
-    if (buddy && /GLOSSARY/.test(buddy)) {
-      const dir = path.dirname(String(foundPath || ''))
-      let mine = ''
-      try { mine = readFileSync(path.join(dir, 'SKILL.md'), 'utf8') } catch {}
-      // 读不到用户级名片时不判陈旧——宁可少提示，不要误报。
-      if (mine) stale = !/GLOSSARY/.test(mine)
-    }
+    let buddy: string | null = null
+    for (const bp of bundledCardPaths(name)) { buddy = readCard(bp); if (buddy !== null) break }
+    // 随包没有这个技能（自定义技能）：无从判断，不判陈旧。
+    if (buddy !== null) stale = !sameContent(buddy, mine)
   } catch { stale = false }
   cache.set(key, stale)
   return stale
