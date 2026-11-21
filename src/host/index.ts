@@ -127,7 +127,9 @@ export default {
     function _remotePred(): Promise<any> { if (!_remotePredP) _remotePredP = import('./remotePredicates.js').then(function (m: any){ return m.createRemotePredicates() }); return _remotePredP }
     let _chainBackoffInst: any = null // #1227：已建好的退避实例（还没建过就是 null，见 clearChainBackoff）
     let _skillProbeP: Promise<any> | null = null
-    function _skillProbe(): Promise<any> { if (!_skillProbeP) _skillProbeP = (async function(){ const mod = await import('./skillProbe.js'); return mod.createSkillProbe({ ctx: ctx, getPlatform: function(...args: any[]){ return getPlatform.apply(null, args) }, getWorkspaceStore: function(...args: any[]){ return getWorkspaceStore.apply(null, args) }, resetChainCache: function(){ chainByKey.clear(); clearChainBackoff() } /* #696 不带工作区的技能广播才清全部链；#1227 退避态里的旧快照一并丢 */, resetChainCacheForKey: function (key: unknown){ invalidateChainCacheForKey(key); clearChainBackoff(key) } /* #968 带工作区的广播只清那一桶；#1227 同一工作区的退避态一并丢 */, logCtx: logCtx }) })(); return _skillProbeP }
+    // #1973：陈旧用户级副本的判定住在 ./skillStaleCopy.js（本文件有 400 行上限，且 dev 产物是
+    //   cordis_define 函数体形态、不允许顶层 import，所以这里用动态 import 取）。
+    function _skillProbe(): Promise<any> { if (!_skillProbeP) _skillProbeP = (async function(){ const mod = await import('./skillProbe.js'); return mod.createSkillProbe({ ctx: ctx, getPlatform: function(...args: any[]){ return getPlatform.apply(null, args) }, getWorkspaceStore: function(...args: any[]){ return getWorkspaceStore.apply(null, args) }, resetChainCache: function(){ chainByKey.clear(); clearChainBackoff() } /* #696 不带工作区的技能广播才清全部链；#1227 退避态里的旧快照一并丢 */, resetChainCacheForKey: function (key: unknown){ invalidateChainCacheForKey(key); clearChainBackoff(key) } /* #968 带工作区的广播只清那一桶；#1227 同一工作区的退避态一并丢 */, logCtx: logCtx, isStaleUserCopy: async function (n: unknown, p2: unknown) { try { const m = await import('./skillStaleCopy.js'); return (m as any).isStaleUserCopy(n, p2) } catch (e) { return false } } }) })(); return _skillProbeP }
     let _detectChainP: Promise<any> | null = null
     // #709（T5）：检查链退避的宿主薄壳（懒加载一次，之后复用）。它自己不排任何定时器。
     function getChainBackoff(): Promise<any> {

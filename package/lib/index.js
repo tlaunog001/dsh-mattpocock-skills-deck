@@ -418,7 +418,14 @@ var stdin_default = {
           }, resetChainCacheForKey: function(key) {
             invalidateChainCacheForKey(key);
             clearChainBackoff(key);
-          }, logCtx });
+          }, logCtx, isStaleUserCopy: async function(n, p2) {
+            try {
+              const m = await import("./skillStaleCopy.js");
+              return m.isStaleUserCopy(n, p2);
+            } catch (e) {
+              return false;
+            }
+          } });
         })();
         return _skillProbeP;
       }

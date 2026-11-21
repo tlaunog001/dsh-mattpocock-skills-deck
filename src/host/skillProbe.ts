@@ -35,6 +35,9 @@ import { isSkillCardValid, probeFsExists, directSkillCardRead, directPathExists,
 import { SKILL_LIST_CACHE_TTL_MS } from '../shared/time-config/src/values.js'
 export function createSkillProbe(deps?: any): any {
   const { ctx, getPlatform, getWorkspaceStore, resetChainCache, resetChainCacheForKey, logCtx } = deps
+  // #1973：判定「用户级副本确实更旧」由装配点注入（它读盘并缓存结果）。
+  //   本文件只调用它拿布尔值——不在探针里触盘，守住「只认注册表」的纪律。
+  const isStaleUserCopy = (deps && typeof deps.isStaleUserCopy === 'function') ? deps.isStaleUserCopy : null
     // 工作区与技能名只记短指纹，不记原始路径（日志白名单纪律，与仓里别处同一种取法）。
     function hash8(s?: any) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch { return '00000000' } }
     // #968 问到的结果短时记住多久（毫秒）。这里有一条不能改的约定：只记问到的（绿），问不到（红）
@@ -262,14 +265,19 @@ export function createSkillProbe(deps?: any): any {
         if (isOffRoot && foundPath) {
           const srcLine = (lang === 'en') ? ' (source: ' + foundPath + ')' : '（来源：' + foundPath + '）'
           detail = detail + srcLine
-        } else if (foundPath) {
-          // #1973：用户级 ~/.agents/skills 里的旧副本会优先于随包新版被加载，且不会触发安装引导，
-          //   存量用户因此拿不到随包修正（如 GLOSSARY 改名）。这里不触盘、不算 hash（守 skillProbe
-          //   “只认注册表”的纪律），只在标准根命中时给一句可操作的核对提示，让遮蔽变得可见。
-          const note = (lang === 'en')
-            ? ' (if this is an older user-level copy, it may shadow the bundled version — compare it with the bundled skills)'
-            : '（若是较旧的用户级副本，可能遮蔽随包新版，请与随包技能核对）'
-          detail = detail + note
+        } else if (foundPath && isStaleUserCopy) {
+          // #1973：用户级 ~/.agents/skills 的旧副本会优先于随包新版被加载，且不触发安装引导，
+          //   存量用户拿不到随包修正。但「等于标准根」不等于「是旧的」——绝大多数正常用户就是装在
+          //   标准根的，无条件提示会让每一次命中都背一句告警（行为实测 7/7 必现）。所以只在装配点
+          //   判定「该技能确有更旧的用户级副本」时才提示；判定本身不在本文件触盘。
+          let stale = false
+          try { stale = (await isStaleUserCopy(skillName, foundPath)) === true } catch { stale = false }
+          if (stale) {
+            const note = (lang === 'en')
+              ? ' (the user-level copy is older than the bundled one and shadows it — refresh ~/.agents/skills from the bundled skills)'
+              : '（用户级副本比随包旧，正在遮蔽随包新版，请用随包技能刷新 ~/.agents/skills）'
+            detail = detail + note
+          }
         }
         try { resetSkillPendingState(skillName) } catch {}
         return { ok: true, level: 'ok', detail, hint, sourcePath: foundPath || undefined, repo: null, channels: [{ channel: 'registry', root: 'registry', result: 'hit', detail: foundPath || '' }] }

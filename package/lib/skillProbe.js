@@ -3,6 +3,7 @@ import { isSkillCardValid, probeFsExists, directSkillCardRead, directPathExists,
 import { SKILL_LIST_CACHE_TTL_MS } from "../shared/time-config/values.js";
 function createSkillProbe(deps) {
   const { ctx, getPlatform, getWorkspaceStore, resetChainCache, resetChainCacheForKey, logCtx } = deps;
+  const isStaleUserCopy = deps && typeof deps.isStaleUserCopy === "function" ? deps.isStaleUserCopy : null;
   function hash8(s) {
     try {
       const t = String(s || "");
@@ -302,9 +303,17 @@ function createSkillProbe(deps) {
       if (isOffRoot && foundPath) {
         const srcLine = lang === "en" ? " (source: " + foundPath + ")" : "（来源：" + foundPath + "）";
         detail = detail + srcLine;
-      } else if (foundPath) {
-        const note = lang === "en" ? " (if this is an older user-level copy, it may shadow the bundled version — compare it with the bundled skills)" : "（若是较旧的用户级副本，可能遮蔽随包新版，请与随包技能核对）";
-        detail = detail + note;
+      } else if (foundPath && isStaleUserCopy) {
+        let stale = false;
+        try {
+          stale = await isStaleUserCopy(skillName, foundPath) === true;
+        } catch {
+          stale = false;
+        }
+        if (stale) {
+          const note = lang === "en" ? " (the user-level copy is older than the bundled one and shadows it — refresh ~/.agents/skills from the bundled skills)" : "（用户级副本比随包旧，正在遮蔽随包新版，请用随包技能刷新 ~/.agents/skills）";
+          detail = detail + note;
+        }
       }
       try {
         resetSkillPendingState(skillName);
