@@ -149,3 +149,7 @@ _research/
 !/package/tracker/
 !/package/refresh/
 !/package/workspace-snapshot/
+
+# fork 本地 npm 缓存与系统文件，不入库
+.npm-cache-local/
+.DS_Store
