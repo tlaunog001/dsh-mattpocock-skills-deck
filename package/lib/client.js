@@ -284,9 +284,9 @@ const PortalOverlay = function(props, children) {
   return portalTop(h("div", props || {}, children));
 };
 
-    const DSW_VERSION = "v1.9.0-beta.45";
+    const DSW_VERSION = "v1.9.0-beta.46";
     const DSW_REPO_URL = "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck";
-    const DSW_BUILD_COMMIT = "58f123b2e09698bfa96430c2d7ab044b40fde7f6";
+    const DSW_BUILD_COMMIT = "04643eeb357a2a990d74c9c95ad5bdc0b4531910";
     const CONTAINER_ACCENT = { map: "#c084fc", spec: "#1D4ED8" };
 const CONTAINER_TINT = { map: "rgba(188,140,255,.07)", spec: "rgba(29,78,216,.10)" };
 const CONTAINER_CHIP_CLASS = { map: "dsws-chip-m", spec: "dsws-chip-s" };
@@ -29769,6 +29769,48 @@ const maybeAutoRetryChainCooldownOk = function(st) {
     return true;
   }
 };
+const autoRetryChainOnce = function(st) {
+  try {
+    if (!st || !st.cwd) return false;
+    if (!chainPendingOf(st)) return false;
+    var key = _autoRetryKeyOf(st);
+    if (_autoRetryState.inFlightByKey.get(key)) return false;
+    var now = Date.now();
+    var hostWait = Number(_autoRetryState.waitMsByKey.get(key) || 0);
+    var cd = Math.max(STEP_WAIT_MS, isFinite(hostWait) && hostWait > 0 ? hostWait : 0);
+    var at = _autoRetryState.atByKey.get(key) || 0;
+    if (cd > 0 && at && now - at < cd) return false;
+    _autoRetryState.atByKey.set(key, now);
+    _autoRetryState.inFlightByKey.set(key, true);
+    var p = null;
+    try {
+      p = loadChain(st, false, CHAIN_EVENT_REASONS.autoRetry, { bypassLocalCache: true });
+    } catch (eL) {
+      _autoRetryState.inFlightByKey.delete(key);
+      return false;
+    }
+    if (!p || typeof p.then !== "function") {
+      _autoRetryState.inFlightByKey.delete(key);
+      return false;
+    }
+    p.then(function(r) {
+      _autoRetryState.inFlightByKey.delete(key);
+      try {
+        var w = Number(r && r.hit && r.hit.waitMs || 0);
+        if (isFinite(w) && w > 0) _autoRetryState.waitMsByKey.set(key, w);
+        else _autoRetryState.waitMsByKey.delete(key);
+      } catch (eW) {
+      }
+      return r;
+    }, function() {
+      _autoRetryState.inFlightByKey.delete(key);
+      return null;
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
 const maybeAutoRetryChain = function(st) {
   if (!st || !st.cwd) return null;
   if (!chainPendingOf(st)) return null;
@@ -31530,17 +31572,13 @@ const startActiveProbeLoop = function() {
         probeNow(false, { background: true, baseMs: gap });
         try {
           if (setupPending) {
-            var _canGo = true;
+            var _handled = false;
             try {
-              if (typeof maybeAutoRetryChainCooldownOk === "function") _canGo = maybeAutoRetryChainCooldownOk(st) === true;
-            } catch (eCd) {
-              _canGo = true;
+              if (typeof autoRetryChainOnce === "function") _handled = autoRetryChainOnce(st) === true;
+            } catch (eOnce) {
+              _handled = false;
             }
-            if (_canGo) {
-              if (typeof chainEventRefresh === "function") chainEventRefresh(st, "setup-pending").catch(function() {
-              });
-              else if (typeof loadChain === "function") loadChain(st, false, "setup-pending").catch(function() {
-              });
+            if (!_handled) {
             }
           }
         } catch (eSetup) {

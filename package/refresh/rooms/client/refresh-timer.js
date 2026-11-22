@@ -249,17 +249,13 @@ const startActiveProbeLoop = function() {
         probeNow(false, { background: true, baseMs: gap });
         try {
           if (setupPending) {
-            var _canGo = true;
+            var _handled = false;
             try {
-              if (typeof maybeAutoRetryChainCooldownOk === "function") _canGo = maybeAutoRetryChainCooldownOk(st) === true;
-            } catch (eCd) {
-              _canGo = true;
+              if (typeof autoRetryChainOnce === "function") _handled = autoRetryChainOnce(st) === true;
+            } catch (eOnce) {
+              _handled = false;
             }
-            if (_canGo) {
-              if (typeof chainEventRefresh === "function") chainEventRefresh(st, "setup-pending").catch(function() {
-              });
-              else if (typeof loadChain === "function") loadChain(st, false, "setup-pending").catch(function() {
-              });
+            if (!_handled) {
             }
           }
         } catch (eSetup) {
