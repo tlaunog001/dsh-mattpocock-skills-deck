@@ -86,9 +86,33 @@ export function stepEvalParallel(items: CheckItem[], resolved: EvalMap): ChainSn
       //   两步建仓向导就进不了快照，状态栏与红卡都拿不到它，「创建并发布」100% 静默失效（issue #1906）。
       //   pending 是「还没确认」不是「确定没事」，把已有修复入口摆出来不会误导；wf.initPublish
       //   自己会做 git 预检，点错也不会误建。
-      const actions = !isPass
-        ? ((it.onFail && Array.isArray(it.onFail.actions) && it.onFail.actions.length) ? it.onFail.actions : ((it.onPass && it.onPass.actions) || []))
-        : []
+      // #1974：pending（还没确认）时**不得**把「建仓」这类会创建远程资源的动作摆出来。
+      //   起因：pending 会兜底取 onPass.actions，而建仓向导（wf.initPublish / contract-op initProject）
+      //   就在里面；下游实测「插件在镜像工作区里重载一次」这条链就会自己往下走，唯一的阻挡是
+      //   时间性 defer（几十秒到几分钟重试），某一轮判成 green 就凭空建了仓并把内网元数据推上去。
+      //   方向按下游建议：丢失动作不该用「自动补做」来解决——pending 只留只读/非创建类的修复入口，
+      //   真正要建仓必须由用户在 fail（已确认）态下显式点，或走两步向导提交。
+      const __isCreateAction = function (a: any): boolean {
+        try {
+          const m = String((a && a.method) || '')
+          const op = String((a && a.op) || '')
+          const sub = String((a && a.submitAction && a.submitAction.method) || '')
+          const subOp = String((a && a.submitAction && a.submitAction.op) || '')
+          const all = [m, op, sub, subOp].join(' ').toLowerCase()
+          // 建仓/发布类：wf.initPublish、契约 op initProject，以及向导提交链上的同类动作
+          return all.indexOf('initpublish') >= 0 || all.indexOf('initproject') >= 0
+        } catch (e) { return false }
+      }
+      const __pickActions = function (list: any): any[] {
+        try { return Array.isArray(list) ? list.filter(function (a: any) { return !__isCreateAction(a) }) : [] } catch (e) { return [] }
+      }
+      const actions = isPass
+        ? []
+        : (isFail
+          // fail 是「已确认出事」，建仓入口照给（用户是显式点的）
+          ? ((it.onFail && Array.isArray(it.onFail.actions) && it.onFail.actions.length) ? it.onFail.actions : ((it.onPass && it.onPass.actions) || []))
+          // pending 是「还没确认」：只给非建仓类的修复入口
+          : __pickActions((it.onFail && Array.isArray(it.onFail.actions) && it.onFail.actions.length) ? it.onFail.actions : ((it.onPass && it.onPass.actions) || [])))
       return { id: it.id, check: it.check, status: status, show: show, actions: actions, isApplicable: true, blockedBy: null, isCurrent: false, isBlocking: status !== 'done' }
     })
     const firstNotDone = steps.findIndex(function (s: StepView) { return s.status !== 'done' })

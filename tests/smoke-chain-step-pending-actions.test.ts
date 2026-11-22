@@ -27,6 +27,26 @@ const cases: Array<[string, boolean]> = [
   ['pending(对象) 行带 onFail 动作', steps['pending-nofail'].actions[0] === wizard],
   ['pending 行 show 仍为名称三格（不含修复文案）', steps['pending-step'].show === steps['pending-step'].show && !!steps['pending-step'].show],
 ]
+
+// #1974：pending（还没确认）不得摆出「建仓」类动作；fail（已确认）照给——用户是显式点的。
+//   起因：下游实测「插件在镜像工作区里重载一次」这条链会自己往下走，唯一阻挡是时间性 defer，
+//   某一轮判成 green 就凭空建仓并把内网元数据推上 GitHub。方向按下游建议：丢失动作不该用自动补做解决。
+{
+  const createAction = { type: 'rpc', method: 'wf.initPublish', params: {} }
+  const readAction = { type: 'rpc', method: 'wf.chain', params: {} }
+  const withCreate = (id: string) => ({
+    id, check: id,
+    onFail: { show: null, actions: [createAction, readAction] },
+    onPass: { show: null, actions: [createAction] },
+  })
+  const snap2 = stepEvalParallel([withCreate('p-step'), withCreate('f-step')], { 'p-step': null, 'f-step': 'fail' })!
+  const st2 = Object.fromEntries(snap2.steps.map((s: any) => [s.id, s])) as Record<string, any>
+  const pNames = (st2['p-step'].actions || []).map((a: any) => String(a && a.method || ''))
+  const fNames = (st2['f-step'].actions || []).map((a: any) => String(a && a.method || ''))
+  cases.push(['pending 行不摆建仓动作', pNames.indexOf('wf.initPublish') < 0])
+  cases.push(['pending 行仍保留非建仓动作', pNames.indexOf('wf.chain') >= 0])
+  cases.push(['fail 行照给建仓动作（用户显式点）', fNames.indexOf('wf.initPublish') >= 0])
+}
 let failed = 0
 for (const [name, ok] of cases) {
   if (!ok) failed += 1
