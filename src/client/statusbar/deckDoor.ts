@@ -154,7 +154,7 @@ export const deckDoorExpand = function (st: any, el?: any): void {
       try { emit(st) } catch (eE) {}
       return
     }
-    // #1975：写设置这一步会失败（最典型：设置文件里有当前版本不认识的字段 → 整份读不出 →
+    // 写设置这一步会失败（最典型：设置文件里有当前版本不认识的字段 → 整份读不出 →
     //   setViewFlagValue 一律返回 false）。旧代码不看返回值，于是「点了没反应」且没有任何提示——
     //   真实事故里连点 67 次、界面零反馈，排查只能靠翻日志。现在把失败摆到界面上。
     let ok = false

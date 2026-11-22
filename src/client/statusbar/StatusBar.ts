@@ -374,7 +374,7 @@ export const StatusBar = (props: any) => {
         Ic({ n: 'chev-up', size: 10 }),
         h('span', null, tr('banner.expandDeck')),
       ])),
-      // #1975：展开失败要说出来。旧行为是「点了没反应」——真实事故里连点 67 次、界面零反馈。
+      // 展开失败要说出来。旧行为是「点了没反应」——真实事故里连点 67 次、界面零反馈。
       //   读一次就清（deckDoorExpandFailTake），失败不常驻；成功路径一个字都不多渲染。
       (function () {
         let failed = false

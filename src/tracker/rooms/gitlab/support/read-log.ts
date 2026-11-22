@@ -176,14 +176,26 @@ export function emitReadDegraded(
   op: string,
   reason: string,
   latencyMs: unknown,
+  detail?: { errorKind?: unknown; errorHash?: unknown; exitCode?: unknown } | null,
 ): void {
   guardEmit(ctx, (c) => {
-    c.logEvent('warn', 'read.degraded', {
+    // #1975：降级事件原来只记 op/reason/latencyMs/opId，把 r.error 整个吞了——
+    //   现场只看到「transport」四个字，分不清是 SSH 掉线、gh 退出码非零、还是 JSON 解析失败。
+    //   这里补三个**不泄露内容**的字段：分类（沿用 host.call.fail 的 errorKind 口径）、
+    //   原文的短哈希（用于「两次是不是同一个错」的对账）、退出码（有就给）。
+    //   原文仍然不进日志——错的原文可能含路径/仓库名，日志纪律不变。
+    const fields: Record<string, unknown> = {
       op: String(op || ''),
       reason: String(reason || ''),
       latencyMs: ms(latencyMs),
       opId: String(c.opId || ''),
-    })
+    }
+    try {
+      if (detail && detail.errorKind != null && String(detail.errorKind) !== '') fields.errorKind = String(detail.errorKind)
+      if (detail && detail.errorHash != null && String(detail.errorHash) !== '') fields.errorHash = String(detail.errorHash)
+      if (detail && detail.exitCode != null && String(detail.exitCode) !== '' && String(detail.exitCode) !== 'undefined') fields.exitCode = Number(detail.exitCode)
+    } catch (eD) { /* 补字段失败不许挡住这条降级事件本身 */ }
+    c.logEvent('warn', 'read.degraded', fields)
   })
 }
 

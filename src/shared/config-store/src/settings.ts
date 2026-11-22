@@ -117,7 +117,7 @@ function unknownIn(obj: Record<string, unknown>, allowed: string[]): string[] {
 /** 校验一份已解析出来的本机设置。版本高于认识时读成功标只读。 */
 export function parseSettings(doc: unknown): ConfigParseResult {
   if (!isRecord(doc)) return fail('bad-shape', '本机设置文件里放的不是一组「名字 → 值」，读到的是清单或一段文字')
-  // #1975：多出来的名字**不再整份拒绝**。一个字段不认识就让人所有界面开关一起失效，代价太大
+  // 多出来的名字**不再整份拒绝**。一个字段不认识就让人所有界面开关一起失效，代价太大
   //   （真实事故：新版写入 workspaces[].suggest，旧版不认 → 整个设置文件读不出 → wf.getSettings 恒失败
   //    → 胶囊展开、开关全静默失效）。现在改成：看不懂的字段原样保留、只记一条告警。
   //   为什么必须「原样保留」而不是丢掉：补丁写会先重读这份文档再合并

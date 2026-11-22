@@ -177,7 +177,13 @@ export async function listIssuesPage(repo: RepositoryRef, filter: ListFilter | u
       if (since) args.push('-F', `since=${since}`)
       r = await c.execGh(args, { cwd: ctx && ctx.cwd, via: 'listPage.gql' })
       if (!r.ok) {
-        emitReadDegraded(ctx, 'listPage', 'listPage:transport', Date.now() - t0)
+        // #1975：原来这里只记「transport」四个字，现场分不清是 SSH 掉线（network）、
+        //   gh 退出码非零、还是别的。这条事件的 `kind` 格本来就是给分类用的（#1418 短枚举、
+        //   不含原文），把错误的 kind 填进去即可，不新增日志键（日志门禁按键集合比对）。
+        //   退出码不是枚举值、塞进短枚举格会破坏口径，因此只在 message 里体现（下方 return 的 error 带原文）。
+        emitReadDegraded(ctx, 'listPage', 'listPage:transport', Date.now() - t0, {
+          kind: (r.error && (r.error as any).kind) || '',
+        })
         return { ok: false, error: r.error }
       }
       // 为什么把回包定成这个形状：只读到本函数实际用的三层（errors/data.repository.issues），更深的节点按 unknown 读；
