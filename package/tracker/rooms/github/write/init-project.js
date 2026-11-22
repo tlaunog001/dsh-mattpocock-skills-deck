@@ -23,8 +23,9 @@ function isRemoteMirrorWorkspace(cwd) {
   try {
     if (!cwd) return false;
     const seg = String(cwd).replace(/\\/g, "/").toLowerCase();
-    if (seg.indexOf("/remote-workspaces/") >= 0) return true;
-    if (seg.indexOf("remote-workspaces/") === 0) return true;
+    if (seg.indexOf("/.dsh/remote-workspaces/") >= 0) return true;
+    const m = seg.match(/\/([^/]+)\/remote-workspaces\/[^/]+\/[^/]+\/?$/);
+    if (m && /^-?[a-z0-9._:\-]+$/.test(m[1])) return true;
     return false;
   } catch (e) {
     return false;
