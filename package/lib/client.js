@@ -284,9 +284,9 @@ const PortalOverlay = function(props, children) {
   return portalTop(h("div", props || {}, children));
 };
 
-    const DSW_VERSION = "v1.9.0-beta.44";
+    const DSW_VERSION = "v1.9.0-beta.45";
     const DSW_REPO_URL = "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck";
-    const DSW_BUILD_COMMIT = "a7e4d3fd2847a4ac76c2feebbc5c9794b1cef2bf";
+    const DSW_BUILD_COMMIT = "58f123b2e09698bfa96430c2d7ab044b40fde7f6";
     const CONTAINER_ACCENT = { map: "#c084fc", spec: "#1D4ED8" };
 const CONTAINER_TINT = { map: "rgba(188,140,255,.07)", spec: "rgba(29,78,216,.10)" };
 const CONTAINER_CHIP_CLASS = { map: "dsws-chip-m", spec: "dsws-chip-s" };
@@ -29738,7 +29738,7 @@ const _flushDeferredChain = function(st) {
     return null;
   }
 };
-const _autoRetryState = { atByKey: /* @__PURE__ */ new Map(), inFlightByKey: /* @__PURE__ */ new Map() };
+const _autoRetryState = { atByKey: /* @__PURE__ */ new Map(), inFlightByKey: /* @__PURE__ */ new Map(), waitMsByKey: /* @__PURE__ */ new Map() };
 const _autoRetryKeyOf = function(st) {
   try {
     return _chainScopedKeyOf(st, _chainKeyOfState(st));
@@ -29754,6 +29754,21 @@ const _logAutoRetrySkip = function(decision, waitMs) {
   } catch (eLogSkip) {
   }
 };
+const maybeAutoRetryChainCooldownOk = function(st) {
+  try {
+    if (!st || !st.cwd) return false;
+    if (!chainPendingOf(st)) return false;
+    var key = _autoRetryKeyOf(st);
+    var now = Date.now();
+    var hostWait = Number(_autoRetryState.waitMsByKey.get(key) || 0);
+    var cd = Math.max(STEP_WAIT_MS, isFinite(hostWait) && hostWait > 0 ? hostWait : 0);
+    var at = _autoRetryState.atByKey.get(key) || 0;
+    if (cd > 0 && at && now - at < cd) return false;
+    return true;
+  } catch (e) {
+    return true;
+  }
+};
 const maybeAutoRetryChain = function(st) {
   if (!st || !st.cwd) return null;
   if (!chainPendingOf(st)) return null;
@@ -29763,7 +29778,8 @@ const maybeAutoRetryChain = function(st) {
     return null;
   }
   var now = Date.now();
-  var cd = STEP_WAIT_MS;
+  var hostWait = Number(_autoRetryState.waitMsByKey.get(key) || 0);
+  var cd = Math.max(STEP_WAIT_MS, isFinite(hostWait) && hostWait > 0 ? hostWait : 0);
   var at = _autoRetryState.atByKey.get(key) || 0;
   if (cd > 0 && at && now - at < cd) {
     _logAutoRetrySkip("cooldown", cd - (now - at));
@@ -29788,6 +29804,12 @@ const maybeAutoRetryChain = function(st) {
   }
   return p.then(function(r) {
     _autoRetryState.inFlightByKey.delete(key);
+    try {
+      var w = Number(r && r.hit && r.hit.waitMs || 0);
+      if (isFinite(w) && w > 0) _autoRetryState.waitMsByKey.set(key, w);
+      else _autoRetryState.waitMsByKey.delete(key);
+    } catch (eW) {
+    }
     return r;
   }, function() {
     _autoRetryState.inFlightByKey.delete(key);
@@ -31508,10 +31530,18 @@ const startActiveProbeLoop = function() {
         probeNow(false, { background: true, baseMs: gap });
         try {
           if (setupPending) {
-            if (typeof chainEventRefresh === "function") chainEventRefresh(st, "setup-pending").catch(function() {
-            });
-            else if (typeof loadChain === "function") loadChain(st, false, "setup-pending").catch(function() {
-            });
+            var _canGo = true;
+            try {
+              if (typeof maybeAutoRetryChainCooldownOk === "function") _canGo = maybeAutoRetryChainCooldownOk(st) === true;
+            } catch (eCd) {
+              _canGo = true;
+            }
+            if (_canGo) {
+              if (typeof chainEventRefresh === "function") chainEventRefresh(st, "setup-pending").catch(function() {
+              });
+              else if (typeof loadChain === "function") loadChain(st, false, "setup-pending").catch(function() {
+              });
+            }
           }
         } catch (eSetup) {
         }
