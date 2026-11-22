@@ -16,7 +16,28 @@ function stepEvalParallel(items, resolved) {
         return oo;
       })();
       const show = isPass ? it.onPass && it.onPass.show || null : isFail ? it.onFail && it.onFail.show || null : _pendingShow;
-      const actions = !isPass ? it.onFail && Array.isArray(it.onFail.actions) && it.onFail.actions.length ? it.onFail.actions : it.onPass && it.onPass.actions || [] : [];
+      const __isCreateAction = function(a) {
+        try {
+          const m = String(a && a.method || "");
+          const op = String(a && a.op || "");
+          const sub = String(a && a.submitAction && a.submitAction.method || "");
+          const subOp = String(a && a.submitAction && a.submitAction.op || "");
+          const all = [m, op, sub, subOp].join(" ").toLowerCase();
+          return all.indexOf("initpublish") >= 0 || all.indexOf("initproject") >= 0;
+        } catch (e) {
+          return false;
+        }
+      };
+      const __pickActions = function(list) {
+        try {
+          return Array.isArray(list) ? list.filter(function(a) {
+            return !__isCreateAction(a);
+          }) : [];
+        } catch (e) {
+          return [];
+        }
+      };
+      const actions = isPass ? [] : isFail ? it.onFail && Array.isArray(it.onFail.actions) && it.onFail.actions.length ? it.onFail.actions : it.onPass && it.onPass.actions || [] : __pickActions(it.onFail && Array.isArray(it.onFail.actions) && it.onFail.actions.length ? it.onFail.actions : it.onPass && it.onPass.actions || []);
       return { id: it.id, check: it.check, status, show, actions, isApplicable: true, blockedBy: null, isCurrent: false, isBlocking: status !== "done" };
     });
     const firstNotDone = steps.findIndex(function(s) {
