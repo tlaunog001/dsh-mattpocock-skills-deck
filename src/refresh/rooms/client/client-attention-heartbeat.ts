@@ -317,10 +317,22 @@ export const probeTargetNow = function (background: boolean, baseMs?: number): a
   _probeBackoff.lastAt = Date.now();
   return target;
 };
-/** 记一拍探测的结局：探成且没变化加一级；有变化 / 变了没并进去 / 前台拍都清零。 */
+/** 记一拍探测的结局：探成且没变化加一级；有变化 / 变了没并进去 / 前台拍都清零。
+ *
+ *  #1975：**探测失败同样算「没有进展」，也要升一级退避。**
+ *  旧实现这一行是 `if (!res || res.ok !== true) return;`——失败既不升也不复位，
+ *  台阶纹丝不动。后果是一条持续失败的读通路会一直按原节拍打下去：下游在远端镜像工作区里
+ *  实测「1 分钟约 25 次、13 分钟不衰减」，`listPage:transport` 与 `wf.probe not-found`
+ *  各 170 次、成对发生，正是这一条漏掉的。
+ *  为什么不改成复位：失败不是「有进展」，复位会让持续失败反而按最快节拍打，比现在更糟。
+ *  升一级是这里唯一安全的方向；下一拍按更长的间隔重试，成功或真正有变化时自然复位。 */
 export const noteProbeReply = function (res: any, background: boolean): void {
   if (!background) { resetProbeBackoff(); return; }
-  if (!res || res.ok !== true) return;
+  if (!res || res.ok !== true) {
+    // 失败：升一级退避（不清零、不复位）。
+    if (_probeBackoff.step < BACKOFF_FACTORS.length - 1) { _probeBackoff.step += 1; logProbeBackoff('backoff'); }
+    return;
+  }
   if (res.changed === true || res.mode === 'deferred' || res.mode === 'failed' || res.mode === 'stale-dropped') { resetProbeBackoff(); return; }
   if (_probeBackoff.step < BACKOFF_FACTORS.length - 1) { _probeBackoff.step += 1; logProbeBackoff('backoff'); }
 };
