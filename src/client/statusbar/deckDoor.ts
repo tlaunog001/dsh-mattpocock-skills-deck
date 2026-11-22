@@ -154,8 +154,23 @@ export const deckDoorExpand = function (st: any, el?: any): void {
       try { emit(st) } catch (eE) {}
       return
     }
-    setDeckStatusBar(st && st.cwd, true)
+    // #1975：写设置这一步会失败（最典型：设置文件里有当前版本不认识的字段 → 整份读不出 →
+    //   setViewFlagValue 一律返回 false）。旧代码不看返回值，于是「点了没反应」且没有任何提示——
+    //   真实事故里连点 67 次、界面零反馈，排查只能靠翻日志。现在把失败摆到界面上。
+    let ok = false
+    try { ok = setDeckStatusBar(st && st.cwd, true) === true } catch (eSet) { ok = false }
+    try { st.deckExpandFail = ok !== true } catch (eFlag) {}
+    try { emit(st) } catch (eEmit) {}
   } catch (e) {}
+}
+
+/** 展开失败那条提示要不要显示（StatusBar 读它决定渲染）；读一次就清，避免常驻。 */
+export const deckDoorExpandFailTake = function (st: any): boolean {
+  try {
+    if (!st || st.deckExpandFail !== true) return false
+    st.deckExpandFail = false
+    return true
+  } catch (e) { return false }
 }
 
 // 「∨」：只折叠胶囊，不动 deck 工具箱（验收 ⑤：只关胶囊时工具与右侧面板都不受影响）。

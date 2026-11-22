@@ -73,6 +73,7 @@ zh:
   banner.deckReopenOk: 开启
   banner.deckReopenCancel: 取消
   banner.deckReopenFail: 没打开，请再试一次
+  banner.expandFail: 展开没生效：本机设置文件读不出来或写不进去（插件会在日志里记下原因）。设置文件里的字段若比当前插件版本新，请先升级插件再试。
   banner.deckCloseTitle: 关闭整个 MattSkillsDeck
   banner.deckCloseBody: 关闭会关掉 deck 工具箱、胶囊状态栏和右侧面板；确认后这三处一起关，可随时去设置页重新打开。
   banner.deckCloseOk: 关闭
@@ -454,6 +455,7 @@ en:
   banner.deckReopenOk: Reopen
   banner.deckReopenCancel: Cancel
   banner.deckReopenFail: Could not reopen — please try again
+  banner.expandFail: "Could not expand — the local settings file cannot be read or written (the plugin logs the reason). If the file contains fields newer than this plugin version, upgrade the plugin first."
   banner.deckCloseTitle: Close the whole MattSkillsDeck
   banner.deckCloseBody: "Closing turns off the deck tools, the capsule status bar and the right panel for this workspace; confirming closes all three. You can turn them back on in settings at any time."
   banner.deckCloseOk: Close

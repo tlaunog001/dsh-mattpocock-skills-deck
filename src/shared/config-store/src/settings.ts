@@ -117,9 +117,17 @@ function unknownIn(obj: Record<string, unknown>, allowed: string[]): string[] {
 /** 校验一份已解析出来的本机设置。版本高于认识时读成功标只读。 */
 export function parseSettings(doc: unknown): ConfigParseResult {
   if (!isRecord(doc)) return fail('bad-shape', '本机设置文件里放的不是一组「名字 → 值」，读到的是清单或一段文字')
-  const strange = unknownIn(doc, TOP_KEYS)
-  if (strange.length > 0) {
-    return fail('unknown-keys', '本机设置文件里有多出来的名字，核不认识它们：' + strange.join('、'), strange)
+  // #1975：多出来的名字**不再整份拒绝**。一个字段不认识就让人所有界面开关一起失效，代价太大
+  //   （真实事故：新版写入 workspaces[].suggest，旧版不认 → 整个设置文件读不出 → wf.getSettings 恒失败
+  //    → 胶囊展开、开关全静默失效）。现在改成：看不懂的字段原样保留、只记一条告警。
+  //   为什么必须「原样保留」而不是丢掉：补丁写会先重读这份文档再合并
+  //   （settingsPatchWrite → mergeSettingsPatch(base=这里返回的 value)），这里丢掉就等于写回时把它们抹掉。
+  const warnings: string[] = []
+  const strangeTop = unknownIn(doc, TOP_KEYS)
+  const preservedTop: Record<string, unknown> = {}
+  if (strangeTop.length > 0) {
+    for (const k of strangeTop) preservedTop[k] = doc[k]
+    warnings.push('unknown-keys：本机设置文件里有多出来的名字，核不认识它们，已原样保留：' + strangeTop.join('、'))
   }
   if (!isInt(doc['version'])) return fail('bad-shape', '本机设置文件里的 version 必须是数字')
   const version = doc['version'] as number
@@ -128,7 +136,7 @@ export function parseSettings(doc: unknown): ConfigParseResult {
       ok: true,
       value: doc,
       readonly: true,
-      warnings: ['version-newer：这份文件是版本 ' + version + '，核只认识到版本 1，可以读来展示，不许写回去。请升级插件。'],
+      warnings: warnings.concat(['version-newer：这份文件是版本 ' + version + '，核只认识到版本 1，可以读来展示，不许写回去。请升级插件。']),
     }
   }
   if (version !== SETTINGS_KNOWN_VERSION) return fail('bad-shape', '本机设置文件里的 version 现在只认 1')
@@ -136,7 +144,11 @@ export function parseSettings(doc: unknown): ConfigParseResult {
   const uiRaw = doc['ui'] === undefined ? {} : doc['ui']
   if (!isRecord(uiRaw)) return fail('bad-shape', '本机设置文件里的 ui 必须是一组「名字 → 值」')
   const uiStrange = unknownIn(uiRaw, UI_KEYS)
-  if (uiStrange.length > 0) return fail('unknown-keys', '本机设置文件 ui 节里有多出来的名字：' + uiStrange.join('、'), uiStrange)
+  const preservedUi: Record<string, unknown> = {}
+  if (uiStrange.length > 0) {
+    for (const k of uiStrange) preservedUi[k] = uiRaw[k]
+    warnings.push('unknown-keys：ui 节里有多出来的名字，已原样保留：' + uiStrange.join('、'))
+  }
   for (const k of ['stateFilter', 'sortKey', 'sortDir']) {
     if (uiRaw[k] !== undefined && typeof uiRaw[k] !== 'string') {
       return fail('bad-shape', '本机设置文件 ui 节里的 ' + k + ' 必须是一段文字')
@@ -167,8 +179,10 @@ export function parseSettings(doc: unknown): ConfigParseResult {
     const entry = wsRaw[root]
     if (!isRecord(entry)) return fail('bad-shape', '本机设置文件 workspaces 节里「' + root + '」的值必须是一组开关')
     const entryStrange = unknownIn(entry, WS_KEYS)
+    const preservedEntry: Record<string, unknown> = {}
     if (entryStrange.length > 0) {
-      return fail('unknown-keys', '本机设置文件 workspaces 节里「' + root + '」有多出来的名字：' + entryStrange.join('、'), entryStrange)
+      for (const k of entryStrange) preservedEntry[k] = entry[k]
+      warnings.push('unknown-keys：workspaces 节里「' + root + '」有多出来的名字，已原样保留：' + entryStrange.join('、'))
     }
     // 先认临时标记 unopened：它决定这一条是普通记录（缺格补默认）还是临时记录（只留写下来的格）。
     //   值不是真假值一律按坏形状回，免得用户手写的 unopened: yes 被 YAML 读成文字后悄悄当成没写。
@@ -216,6 +230,8 @@ export function parseSettings(doc: unknown): ConfigParseResult {
       }
       norm[k] = entry[k]
     }
+    // 这条记录里看不懂的字段原样带回去（同上：补丁写以这份 value 为 base 合并，丢了就是写回时抹掉）。
+    for (const k of Object.keys(preservedEntry)) norm[k] = preservedEntry[k]
     workspaces[root] = norm
   }
 
@@ -239,22 +255,27 @@ export function parseSettings(doc: unknown): ConfigParseResult {
     templates[name] = tplRaw[name]
   }
 
+  // 看不懂的字段原样带回去（见本函数开头那条注释：补丁写会拿这份 value 当 base 合并，
+  //   丢掉就等于在写回时把它们抹掉）。位置按各自所在的节放回，键不与已知键冲突（已由 unknownIn 保证）。
+  const uiOut: Record<string, unknown> = {
+    stateFilter: uiRaw['stateFilter'] === undefined ? '' : uiRaw['stateFilter'],
+    sortKey: uiRaw['sortKey'] === undefined ? '' : uiRaw['sortKey'],
+    sortDir: uiRaw['sortDir'] === undefined ? '' : uiRaw['sortDir'],
+    labelClicks: clicks,
+  }
+  for (const k of Object.keys(preservedUi)) uiOut[k] = preservedUi[k]
   return {
     ok: true,
     value: {
       version: 1,
-      ui: {
-        stateFilter: uiRaw['stateFilter'] === undefined ? '' : uiRaw['stateFilter'],
-        sortKey: uiRaw['sortKey'] === undefined ? '' : uiRaw['sortKey'],
-        sortDir: uiRaw['sortDir'] === undefined ? '' : uiRaw['sortDir'],
-        labelClicks: clicks,
-      },
+      ui: uiOut,
       workspaces,
       debug: { enabled, sampleRate },
       templates,
+      ...preservedTop,
     },
     readonly: false,
-    warnings: [],
+    warnings,
   }
 }
 

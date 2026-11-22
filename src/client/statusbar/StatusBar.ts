@@ -19,6 +19,7 @@ declare function checksumsOf(...args: any[]): any;
 declare function useDeckViewSlice(...args: any[]): any;
 // #1894：问「这个会话在哪个目录」的那条宿主电话已经搬进视图模型接线层，视图文件不再直连 host.call。
 declare function deckResolveSessionCwd(...args: any[]): any;
+declare function deckDoorExpandFailTake(...args: any[]): any;
 declare function clearStatusClose(...args: any[]): any;
 declare function closeStatusBugMenu(...args: any[]): any;
 declare function closeStatusGate(...args: any[]): any;
@@ -373,6 +374,14 @@ export const StatusBar = (props: any) => {
         Ic({ n: 'chev-up', size: 10 }),
         h('span', null, tr('banner.expandDeck')),
       ])),
+      // #1975：展开失败要说出来。旧行为是「点了没反应」——真实事故里连点 67 次、界面零反馈。
+      //   读一次就清（deckDoorExpandFailTake），失败不常驻；成功路径一个字都不多渲染。
+      (function () {
+        let failed = false
+        try { failed = (typeof deckDoorExpandFailTake === 'function') && deckDoorExpandFailTake(s) === true } catch (eF) { failed = false }
+        if (!failed) return null
+        return h('div', { role: 'status', 'aria-live': 'polite', style: { fontSize: 10, color: '#f87171', marginLeft: 8, lineHeight: 1.4, maxWidth: 420 } }, tr('banner.expandFail'))
+      })(),
       modalSeat, deckDoorConfirmEl(h, s), deckDoorCloseConfirmEl(h, s), h(SuggestStreamMount, { sid: sid, cwd: s.cwd }), h(ShownAttentionMount, { sid: sid }),
     ])
   }
