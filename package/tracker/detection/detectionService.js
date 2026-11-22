@@ -250,7 +250,8 @@ function createDetectionService({ registry, getPlatform, getFs, getTimers, works
             return "00000000";
           }
         };
-        logCtx.fire("debug", "detection.refid.source", { source: refIdSource, hasRefId: !!(repoHandle && repoHandle.refId), cwdHash: h8(String(cwd || "")) });
+        const suspicious = refIdSource === "derived";
+        logCtx.fire(suspicious ? "info" : "debug", "detection.refid.source", { source: refIdSource, hasRefId: !!(repoHandle && repoHandle.refId), cwdHash: h8(String(cwd || "")) });
       }
     } catch (eLog) {
     }
