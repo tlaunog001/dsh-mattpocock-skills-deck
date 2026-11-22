@@ -23,11 +23,26 @@ test('#1975 回包后记录宿主 waitMs（hit.waitMs）', () => {
   assert.ok(subSrc.includes('_autoRetryState.waitMsByKey.set'), '应写入 waitMsByKey')
 })
 
-test('#1975 setup-pending 复查也走冷却（不再每拍直发）', () => {
-  assert.ok(timerSrc.includes('maybeAutoRetryChainCooldownOk'), 'setup-pending 应先问冷却')
-  const iGate = timerSrc.indexOf('maybeAutoRetryChainCooldownOk(st)')
-  const iFire = timerSrc.indexOf("chainEventRefresh(st, 'setup-pending')")
-  assert.ok(iGate > 0 && iFire > iGate, '冷却判断要在发起之前，实际: gate=' + iGate + ' fire=' + iFire)
+test('#1975 setup-pending 复查走「判+记+发」入口（只判不记等于没改）', () => {
+  // 第一版只加了「判」不写 atByKey，冷却永远不成立——这条断言就是防那个坑回潮
+  assert.ok(timerSrc.includes('autoRetryChainOnce'), 'setup-pending 应走带记账的入口')
+  assert.ok(!timerSrc.includes("chainEventRefresh(st, 'setup-pending')"), '不得再每拍无条件直发')
+})
+
+test('#1975 autoRetryChainOnce 必须记账（atByKey + waitMsByKey）', () => {
+  const i = subSrc.indexOf('export const autoRetryChainOnce')
+  assert.ok(i > 0, '应有该入口')
+  const body = subSrc.slice(i, i + 1600)
+  assert.ok(body.includes('atByKey.set'), '发之前要记发起时刻')
+  assert.ok(body.includes('waitMsByKey.set'), '回包要记 waitMs')
+  assert.ok(body.includes('inFlightByKey'), '要有单飞保护')
+})
+
+test('#1975 只判不记的那个口仍然只判不记（给不发请求的调用方用）', () => {
+  const i = subSrc.indexOf('export const maybeAutoRetryChainCooldownOk')
+  assert.ok(i > 0, '保留该函数')
+  const body = subSrc.slice(i, i + 900)
+  assert.ok(!body.includes('atByKey.set'), '它不得写 atByKey')
 })
 
 test('#1975 冷却判断只判不记（不把冷却窗提前推后）', () => {

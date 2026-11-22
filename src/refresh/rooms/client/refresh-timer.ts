@@ -45,7 +45,7 @@ declare const hydrateFromCache: any;
 declare const snapshotWithoutWorkRoute: any;
 declare const loadOwnWorkRoute: any;
 declare const chainEventRefresh: any;
-declare const maybeAutoRetryChainCooldownOk: any;
+declare const autoRetryChainOnce: any;
 declare const loadChain: any;
 declare const setupPendingOf: any;
 // #1474：链自动复查的判据与入口（实现都在 probe-chain-subscription.js 那一半，这里只调）。
@@ -323,13 +323,15 @@ export const startActiveProbeLoop = function (): void {
             //   下游实测 read.degraded 稳定 ~13 次/分、不衰减。而 probe.loop 那边早就退到 50 秒了——
             //   两条通路解耦，退的只是探测，没退这条复查。
             //   现在与 maybeAutoRetryChain 共用同一份冷却（含宿主 waitMs 的较大值），不再各算各的。
-            var _canGo: boolean = true;
+            // 走「判 + 记 + 发」的那个入口：只判不记的话，atByKey 永远不更新、冷却永远不成立，
+            //   等于什么都没改（第一版就是这么错的）。
+            var _handled: boolean = false;
             try {
-              if (typeof maybeAutoRetryChainCooldownOk === 'function') _canGo = maybeAutoRetryChainCooldownOk(st) === true;
-            } catch (eCd) { _canGo = true; }
-            if (_canGo) {
-              if (typeof chainEventRefresh === 'function') chainEventRefresh(st, 'setup-pending').catch(function (): void {});
-              else if (typeof loadChain === 'function') loadChain(st, false, 'setup-pending').catch(function (): void {});
+              if (typeof autoRetryChainOnce === 'function') _handled = autoRetryChainOnce(st) === true;
+            } catch (eOnce) { _handled = false; }
+            if (!_handled) {
+              // 没被那条路接下（不在 pending 态 / 被冷却挡下 / 接线缺失）就不发。
+              //   旧行为是每拍无条件直发，那正是 read.degraded 打不停的来源。
             }
           }
         } catch (eSetup) {}

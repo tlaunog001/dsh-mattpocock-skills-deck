@@ -448,6 +448,43 @@ export const maybeAutoRetryChainCooldownOk = function (st: any): boolean {
     return true;
   } catch (e) { return true; }
 };
+/**
+ * #1975：给 setup-pending 那条复查用的「判 + 记 + 发」入口。
+ *
+ * 为什么不能只用 maybeAutoRetryChainCooldownOk：那个只判**不记**（它要给只判不发的调用方用）。
+ *   setup-pending 这一路发完请求后必须自己把 atByKey / waitMsByKey 记上，否则下一拍再判时
+ *   at 仍是旧值、冷却永远不成立——那等于什么都没改（beta.45 的第一版就踩了这个坑）。
+ *
+ * 返回 true 表示这次真的发出去了（调用方不必再发）；false 表示被冷却挡下或没在 pending 态。
+ */
+export const autoRetryChainOnce = function (st: any): boolean {
+  try {
+    if (!st || !st.cwd) return false;
+    if (!chainPendingOf(st)) return false;
+    var key: string = _autoRetryKeyOf(st);
+    if (_autoRetryState.inFlightByKey.get(key)) return false;
+    var now: number = Date.now();
+    var hostWait: number = Number(_autoRetryState.waitMsByKey.get(key) || 0);
+    var cd: number = Math.max(STEP_WAIT_MS, isFinite(hostWait) && hostWait > 0 ? hostWait : 0);
+    var at: number = _autoRetryState.atByKey.get(key) || 0;
+    if (cd > 0 && at && now - at < cd) return false;
+    // 记账：先记发起时刻，再发；回包里带 waitMs 就更新，供下一轮冷却用。
+    _autoRetryState.atByKey.set(key, now);
+    _autoRetryState.inFlightByKey.set(key, true);
+    var p: any = null;
+    try { p = loadChain(st, false, CHAIN_EVENT_REASONS.autoRetry, { bypassLocalCache: true }); } catch (eL) { _autoRetryState.inFlightByKey.delete(key); return false; }
+    if (!p || typeof p.then !== 'function') { _autoRetryState.inFlightByKey.delete(key); return false; }
+    p.then(function (r: any): any {
+      _autoRetryState.inFlightByKey.delete(key);
+      try {
+        var w: number = Number(r && r.hit && r.hit.waitMs || 0);
+        if (isFinite(w) && w > 0) _autoRetryState.waitMsByKey.set(key, w); else _autoRetryState.waitMsByKey.delete(key);
+      } catch (eW) {}
+      return r;
+    }, function (): any { _autoRetryState.inFlightByKey.delete(key); return null; });
+    return true;
+  } catch (e) { return false; }
+};
 export const maybeAutoRetryChain = function (st: any): any {
   if (!st || !st.cwd) return null;
   if (!chainPendingOf(st)) return null;
