@@ -26,6 +26,11 @@ import { beginWriteTrail, emitRepoInitWrite } from '../support/write-log.js'
 import type { WriteTrail } from '../support/write-log.js';
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
 import { GIT_PROBE_TIMEOUT_MS, GITHUB_INIT_TIMEOUT_MS } from '../../../../shared/time-config/src/values.js'
+// #1974：写 .git/info/exclude 要用到（排除 DSH 内部产物，见 git add 那一段）。
+// 本仓多个域的 tsconfig 有意不加载类型包（types 为空），Node 内建模块的类型随之缺席；
+// 运行时一定是 Node，与 src/host/rpcChannel.ts 同一处理：只忽略这一行导入的类型错误。
+// @ts-expect-error
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 
 /**
  * 开仓失败的错误：三段式，但 kind 是开仓自己的结果词（bad-name/no-git/no-gh/not-logged-in/
@@ -81,6 +86,29 @@ export async function initProject(handle: RepoHandle, input: InitProjectInput, c
   const r = await initProjectInner(handle, input, ctx, trail)
   emitRepoInitWrite(ctx, trail, r, t0)
   return r
+}
+
+/**
+ * #1974：这个目录是不是 dsh-remote 的**远端镜像工作区**（真仓库在远端，本地只是一份镜像）。
+ *
+ * 为什么必须有这条判据：镜像目录里通常没有 `.git`（或只有一份不含 origin 的），于是
+ * 「识别不到仓库」会被当成「该建一个仓库」，`route:"created"` 就在用户账号下凭空建出
+ * `<用户名>/<目录名>` 并把镜像内容（含 `.dsh-remote-meta.json` 这类内网元数据）推上去。
+ * 这个错误一旦发生不可逆：仓库已建、历史已推。
+ *
+ * 判据刻意不依赖任何其它插件（不调 ctx.get('remoteFs')），因此未装 remote-exec 时同样有效：
+ *   `<DSH_HOME>/remote-workspaces/` 是 dsh-remote 的固定镜像根布局，只要路径落在这之下就是镜像。
+ * 这条判据只回答「是不是镜像」；要不要据此拒绝建仓由调用方决定。
+ */
+function isRemoteMirrorWorkspace(cwd: string): boolean {
+  try {
+    if (!cwd) return false
+    const seg = String(cwd).replace(/\\/g, '/').toLowerCase()
+    if (seg.indexOf('/remote-workspaces/') >= 0) return true
+    // 相对路径形态（极少见）：前缀就是它
+    if (seg.indexOf('remote-workspaces/') === 0) return true
+    return false
+  } catch (e) { return false }
 }
 
 /** 开仓发布的本体（对外名字与行为都在上面那个入口上）。 */
@@ -229,6 +257,23 @@ async function initProjectInner(handle: RepoHandle, input: InitProjectInput, ctx
   const usable = await preflightWorkspaceGit(git, cwd)
   if (!usable.ok) return gitFail(usable.text, cwd)
 
+  // #1974：**远端镜像工作区一律不许在这里建仓。**
+  //   镜像目录里没有（或只有一份不含 origin 的）`.git`，于是「识别不到仓库」会被当成
+  //   「该建一个仓库」，凭空在用户账号下建出 `<用户名>/<目录名>` 并把镜像内容推上去——
+  //   含 `.dsh-remote-meta.json`（内网主机/账号/路径）与插件快照库，一旦推送不可逆。
+  //   真仓库在远端，应当去远端确认 origin，而不是在镜像里造一个新的。
+  //   （触发条件不限于用户点初始化：setup-pending 自动链在插件重载后会自己跑，实测可达。）
+  if (isRemoteMirrorWorkspace(cwd)) {
+    return {
+      ok: false,
+      error: {
+        kind: KIND_UNKNOWN,
+        message: '这是 dsh-remote 的远端镜像工作区，真仓库在远端，不能在这里新建仓库。请到远端目录里确认 origin（例如 ' + (git ? 'git -C <远端路径> remote -v' : 'git remote -v') + '），或在本地克隆一份真正的仓库再发布。',
+        raw: '',
+      },
+    }
+  }
+
   // 1. git init（若已是 git 仓库则跳过）
   try {
     if (usable.notRepoYet) {
@@ -240,7 +285,31 @@ async function initProjectInner(handle: RepoHandle, input: InitProjectInput, ctx
     if (!initR.ok) return gitFail(initR.error, cwd)
   }
 
-  // 2. git add .
+  // 2. git add . —— 但先把 DSH/插件的内部产物硬排除掉（#1974）。
+  //    `.gitignore` 是**项目自己的**意愿，不能指望它替我们挡住插件写进工作区的点目录；
+  //   而 `.dsh-remote-meta.json` 里有内网主机、端口、账号与绝对路径，`*.sqlite*` 是插件快照库，
+  //   一旦作为 initial commit 推上去就永久留在历史里。宁可推一个空仓，也不能推这些。
+  //   做法：把排除规则写进 .git/info/exclude（本地、不进版本库、不污染用户的 .gitignore）。
+  try {
+    const excl = [
+      '.dsh-remote-meta.json',
+      '.dsh-remote-sync-state.json',
+      '.dsh-mattskillsdeck-cache/',
+      '*.sqlite',
+      '*.sqlite-shm',
+      '*.sqlite-wal',
+    ].join('\n')
+    const exclPath = String(cwd).replace(/[\\/]+$/, '') + '/.git/info/exclude'
+    await execProcLocal([git, 'rev-parse', '--git-dir'], cwd)
+    // 用 git 自己写，避免依赖进程对 .git/info 目录的判断；失败不阻断（下面还有一道核对）
+    await execProcLocal([git, 'config', '--local', 'core.excludesFile', exclPath], cwd)
+    try {
+      mkdirSync(String(exclPath).replace(/[\\/][^\\/]+$/, ''), { recursive: true })
+      const prev = existsSync(exclPath) ? String(readFileSync(exclPath, 'utf8')) : ''
+      const lines = excl.split('\n').filter((l: string) => l && prev.indexOf(l) < 0)
+      if (lines.length) appendFileSync(exclPath, (prev && prev.slice(-1) !== '\n' ? '\n' : '') + lines.join('\n') + '\n')
+    } catch (eW) { /* 写不进就只靠上面的 config */ }
+  } catch (eExcl) { /* 排除规则接不下时不能让建仓本身失败，下面照常 add */ }
   const addR = await execProcLocal([git, 'add', '.'], cwd)
   if (!addR.ok) return gitFail(addR.error, cwd)
 
