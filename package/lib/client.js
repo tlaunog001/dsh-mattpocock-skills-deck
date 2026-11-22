@@ -284,9 +284,9 @@ const PortalOverlay = function(props, children) {
   return portalTop(h("div", props || {}, children));
 };
 
-    const DSW_VERSION = "v1.9.0-beta.47";
+    const DSW_VERSION = "v1.9.0-beta.48";
     const DSW_REPO_URL = "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck";
-    const DSW_BUILD_COMMIT = "469e21be33d33df0a2eeaf1afdb37d9316ce024b";
+    const DSW_BUILD_COMMIT = "6844d9edf4b719b10ea5c1c4a2f1e6f2d6154f95";
     const CONTAINER_ACCENT = { map: "#c084fc", spec: "#1D4ED8" };
 const CONTAINER_TINT = { map: "rgba(188,140,255,.07)", spec: "rgba(29,78,216,.10)" };
 const CONTAINER_CHIP_CLASS = { map: "dsws-chip-m", spec: "dsws-chip-s" };
@@ -31572,13 +31572,20 @@ const startActiveProbeLoop = function() {
         probeNow(false, { background: true, baseMs: gap });
         try {
           if (setupPending) {
+            var _hasOnce = typeof autoRetryChainOnce === "function";
             var _handled = false;
-            try {
-              if (typeof autoRetryChainOnce === "function") _handled = autoRetryChainOnce(st) === true;
-            } catch (eOnce) {
-              _handled = false;
+            if (_hasOnce) {
+              try {
+                _handled = autoRetryChainOnce(st) === true;
+              } catch (eOnce) {
+                _handled = false;
+              }
             }
-            if (!_handled) {
+            if (!_hasOnce) {
+              if (typeof chainEventRefresh === "function") chainEventRefresh(st, "setup-pending").catch(function() {
+              });
+              else if (typeof loadChain === "function") loadChain(st, false, "setup-pending").catch(function() {
+              });
             }
           }
         } catch (eSetup) {

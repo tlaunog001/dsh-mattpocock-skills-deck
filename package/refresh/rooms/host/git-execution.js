@@ -305,10 +305,6 @@ function createRepoKeys(deps) {
     }
     if (repoKeys[key]) {
       repoKeyCheckedAt[key] = Date.now();
-      try {
-        if (logCtx) logCtx.fire("debug", "repo.resolve.recheck.stale", { tier: 0, ok: true });
-      } catch (eL) {
-      }
       return repoKeys[key];
     }
     return null;
