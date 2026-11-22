@@ -1,16 +1,16 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-06T14:05:45.934Z",
+  "generatedAt": "2026-11-22T19:04:50.789Z",
   "generatedBy": "node scripts/gate-map.mts",
-  "chainLength": 600,
-  "gateCount": 600,
-  "attributedGates": 544,
+  "chainLength": 601,
+  "gateCount": 601,
+  "attributedGates": 545,
   "unattributedGates": 56,
   "buildOutputOnlyGates": 21,
   "completionRecordedGates": 143,
   "smokeLength": 8,
   "smokeCompletionRecordedGates": 5,
-  "graphFileCount": 962,
+  "graphFileCount": 963,
   "gates": [
     {
       "step": "node tests/verify-1207-splice-ts.ts",
@@ -7436,6 +7436,21 @@
       "completionRecord": true,
       "expectedAssertions": 59,
       "reason": "归属来自 文件头 // 门禁归属: 注释（共 9 条）"
+    },
+    {
+      "step": "node tests/verify-1975-repo-key-revalidate-nonblocking.ts",
+      "file": "tests/verify-1975-repo-key-revalidate-nonblocking.ts",
+      "guards": [
+        "src/refresh/rooms/host/git-execution.ts"
+      ],
+      "dirs": [
+        "src/refresh/rooms/host"
+      ],
+      "unattributed": false,
+      "buildOutputOnly": false,
+      "completionRecord": false,
+      "expectedAssertions": 0,
+      "reason": "归属来自 文件头 // 门禁归属: 注释（共 1 条）"
     },
     {
       "step": "node tests/verify-3-workspace-switch.ts",
@@ -15554,6 +15569,7 @@
       "node tests/verify-1932-multi-window.ts",
       "node tests/verify-1933-network-fallback.ts",
       "node tests/verify-1935-receipt-resync.ts",
+      "node tests/verify-1975-repo-key-revalidate-nonblocking.ts",
       "node tests/verify-3-workspace-switch.ts",
       "node tests/verify-504-github-pr.ts",
       "node tests/verify-507-pr-offline.ts",
@@ -16587,9 +16603,9 @@
   },
   "coverage": {
     "sourceRoot": "src",
-    "fileCount": 985,
+    "fileCount": 986,
     "dirCount": 101,
-    "coveredFileCount": 985,
+    "coveredFileCount": 986,
     "ungatedFileCount": 0,
     "ungatedDirCount": 0,
     "dedicatedDirCount": 80,
@@ -17007,6 +17023,7 @@
       "src/host/skillDoc.ts",
       "src/host/skillProbe.ts",
       "src/host/skillProbeCache.ts",
+      "src/host/skillStaleCopy.ts",
       "src/host/snapshotEnvelope.ts",
       "src/host/snapshotInflight.ts",
       "src/host/stallWatch.ts",

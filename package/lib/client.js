@@ -286,7 +286,7 @@ const PortalOverlay = function(props, children) {
 
     const DSW_VERSION = "v1.9.0-beta.49";
     const DSW_REPO_URL = "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck";
-    const DSW_BUILD_COMMIT = "6128d833ccbec4547d21541ad724a3737e946b71";
+    const DSW_BUILD_COMMIT = "fc84d50fb974092a8f2a96cbc309bb6360810815";
     const CONTAINER_ACCENT = { map: "#c084fc", spec: "#1D4ED8" };
 const CONTAINER_TINT = { map: "rgba(188,140,255,.07)", spec: "rgba(29,78,216,.10)" };
 const CONTAINER_CHIP_CLASS = { map: "dsws-chip-m", spec: "dsws-chip-s" };

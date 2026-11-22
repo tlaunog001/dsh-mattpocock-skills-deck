@@ -196,6 +196,7 @@ export const TIME_YAML = {
   skillListCacheTtlMs: 3e4,
   skillProbeCacheMs: 1e4,
   workspaceRootTtlMs: 3e4,
+  repoKeyTrustMs: 6e4,
   snapWaitMs: 3e4,
   snapshotProbeMs: 2600,
   storeNoticeDismissMs: 2800,
@@ -417,6 +418,7 @@ export const TRACKER_INDEX_SKEW_MS = 6e4;
 export const SKILL_LIST_CACHE_TTL_MS = 3e4;
 export const SKILL_PROBE_CACHE_MS = 1e4;
 export const WORKSPACE_ROOT_TTL_MS = 3e4;
+export const REPO_KEY_TRUST_MS = 6e4;
 export const SNAP_WAIT_MS = 3e4;
 export const SNAPSHOT_PROBE_MS = 2600;
 export const STORE_NOTICE_DISMISS_MS = 2800;

@@ -3,11 +3,10 @@ import { timeoutForGhArgs, queueTimeoutForTier, isWriteGhArgs, ghArgsOf, ghComma
 import { getGhLane } from "./outbound-admission.js";
 import { createGhExecution } from "./gh-execution.js";
 import { onceRelease, abandonCommand, startWaitTimeout, DISPOSED_MESSAGE } from "../../../shared/command-cleanup/command-cleanup.js";
-import { PROC_GRACE_MS } from "../../../shared/time-config/values.js";
+import { PROC_GRACE_MS, REPO_KEY_TRUST_MS } from "../../../shared/time-config/values.js";
 import { remoteUrlsOfGitConfig } from "../../../tracker/kernel/git-remote.js";
 function createRepoKeys(deps) {
   const repoKeyCheckedAt = /* @__PURE__ */ Object.create(null);
-  const REPO_KEY_TRUST_MS = 6e4;
   const _repoKeyRechecking = /* @__PURE__ */ Object.create(null);
   const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate } = deps;
   const _gh = createGhExecution({ subprocess, timer, DEFAULT_CWD, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, clearWorkspaceStore, setCache, namingSweepSoon, getChainBackoff, logCtx, reportOutbound, hash8, canonicalKey });

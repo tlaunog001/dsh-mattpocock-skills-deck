@@ -320,6 +320,7 @@ const KEYS: Array<[string, string, string]> = [
   ['skillListCacheTtlMs', 'SKILL_LIST_CACHE_TTL_MS', 'ttl'],
   ['skillProbeCacheMs', 'SKILL_PROBE_CACHE_MS', 'ttl'],
   ['workspaceRootTtlMs', 'WORKSPACE_ROOT_TTL_MS', 'ttl'],
+  ['repoKeyTrustMs', 'REPO_KEY_TRUST_MS', 'ttl'],
   ['snapWaitMs', 'SNAP_WAIT_MS', 'ttl'],
   ['snapshotProbeMs', 'SNAPSHOT_PROBE_MS', 'ttl'],
   ['storeNoticeDismissMs', 'STORE_NOTICE_DISMISS_MS', 'ttl'],

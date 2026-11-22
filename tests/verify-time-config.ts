@@ -817,7 +817,10 @@ async function main(): Promise<void> {
   check(!/HOST_TIMEOUT_MS|hostTimeoutMs/.test(hostEntrySrc), 'src/host/index.ts 里不再出现已删的 hostTimeoutMs（统一后不许留旧名）')
   const probeChainSrc = fs.readFileSync(path.join(ROOT, 'src/refresh/rooms/client/probe-chain-subscription.ts'), 'utf8')
   check(/import\s*\{\s*STEP_WAIT_MS\s*\}\s*from\s*'[^']*time-config\/values\.js'/.test(probeChainSrc), 'probe-chain-subscription.ts 真 import 了 STEP_WAIT_MS（构建按界面半边写法剥掉这一行，名字由拼接片段提供）')
-  check(/=\s*STEP_WAIT_MS\s*;/.test(probeChainSrc), 'probe-chain-subscription.ts 的自动复查间隔取 STEP_WAIT_MS')
+  // #1975：冷却从「写死 STEP_WAIT_MS」改成「宿主给的 waitMs 与 STEP_WAIT_MS 取大」——
+  //   宿主让等更久就听宿主的，宿主没给（0）仍用本地值兜底。判据跟着认这两种写法，
+  //   但必须仍然引用中央的 STEP_WAIT_MS（不许退回到自己写一个数字）。
+  check(/=\s*Math\.max\(\s*STEP_WAIT_MS\b/.test(probeChainSrc) || /=\s*STEP_WAIT_MS\s*;/.test(probeChainSrc), 'probe-chain-subscription.ts 的自动复查间隔取 STEP_WAIT_MS（或与宿主 waitMs 取大的那一种写法）')
   const timeoutsRaw = fs.readFileSync(path.join(ROOT, 'config/timeouts.yaml'), 'utf8')
   check(countOccurrences(timeoutsRaw, 'stepWaitMs:') === 1, 'config/timeouts.yaml 里一步等待只定义一次（stepWaitMs: 出现 ' + countOccurrences(timeoutsRaw, 'stepWaitMs:') + ' 次）')
   check(!/\bhostTimeoutMs\b/.test(timeoutsRaw), 'config/timeouts.yaml 里没有已删的 hostTimeoutMs（旧键不许作为第二份数字留着）')

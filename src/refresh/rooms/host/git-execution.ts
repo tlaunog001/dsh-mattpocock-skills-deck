@@ -22,7 +22,7 @@ import { createGhExecution } from './gh-execution.js'
 // #1392：实例销毁时一条外部命令的收尾（还名额、终止子进程、接住 done、建计时器守卫）见 ../shared/command-cleanup/。
 import { onceRelease, abandonCommand, startWaitTimeout, DISPOSED_MESSAGE } from '../../../shared/command-cleanup/src/command-cleanup.js'
 // 超时住中央 YAML，调时间改 config/timeouts.yaml。
-import { PROC_GRACE_MS } from '../../../shared/time-config/src/values.js'
+import { PROC_GRACE_MS, REPO_KEY_TRUST_MS } from '../../../shared/time-config/src/values.js'
 // #1566：第三级要扫 .git/config 里的全部远端，解析那一小段归 tracker/kernel（GitHub/GitLab 两边共用）。
 import { remoteUrlsOfGitConfig } from '../../../tracker/kernel/git-remote.js'
 
@@ -150,10 +150,9 @@ type WorkspaceKeyModule = typeof import('../../../host/workspaceKey.js')
 
 export function createRepoKeys(deps: RepoKeysDeps) {
   // #1975：repoKeys 的校验时刻（旁路表，不改 repoKeys 的形状，别的读方照旧按引用读它）。
-  //   REPO_KEY_TRUST_MS 取 60 秒：下游那条循环是 5 秒一拍，一分钟内必然重验一次；
-  //   而正常工作时这点开销可以忽略（每次重验只跑一条本地 git remote get-url，不起网络请求）。
+  //   信任窗口 REPO_KEY_TRUST_MS 从 config/ttl.yaml 的 repoKeyTrustMs 生成（#1215 单源头纪律），
+  //   不在这里写数字；取 60 秒的理由与「为什么重验必须在后台」见那份 YAML 的注释。
   const repoKeyCheckedAt: Record<string, number> = Object.create(null)
-  const REPO_KEY_TRUST_MS = 60000
   // 后台重验的去重表：同一个工作区同时只跑一个重验，别让每拍都起一个 git 进程。
   const _repoKeyRechecking: Record<string, boolean> = Object.create(null)
   const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate } = deps
