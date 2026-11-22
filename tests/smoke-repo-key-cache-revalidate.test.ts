@@ -15,7 +15,10 @@ const src = readFileSync(path.join(here, '..', 'src', 'refresh', 'rooms', 'host'
 test('#1975 缓存有校验时刻与信任窗口（不再永久有效）', () => {
   assert.ok(src.includes('repoKeyCheckedAt'), '应有按工作区的校验时刻表')
   assert.ok(src.includes('REPO_KEY_TRUST_MS'), '应有信任窗口常量')
-  assert.ok(/nowMs - checkedAt\) < REPO_KEY_TRUST_MS/.test(src), '窗口内才直接用缓存')
+  // 窗口过期后不再同步重验（那会让渲染路径等 git），改为后台补一次；见
+  // tests/verify-1975-repo-key-revalidate-nonblocking.ts 的运行时判据。
+  assert.ok(src.includes('_repoKeyRechecking'), '过期重验要有去重表（同工作区同时只跑一个）')
+  assert.ok(/resolveRepoKeyInto\(key\)\.catch/.test(src), '重验必须 fire-and-forget，不许在调用路径上 await')
 })
 
 test('#1975 三处写入缓存都必须更新时间戳', () => {
@@ -25,7 +28,9 @@ test('#1975 三处写入缓存都必须更新时间戳', () => {
 
 test('#1975 重验失败时保留旧缓存，不突然「认不出仓库」', () => {
   // 失败路径必须在 return null 之前，先把旧缓存连同新校验时刻返回去
-  const iNull = src.indexOf('      return null', src.indexOf('async function getRepoKey'))
+  const iFn = src.indexOf('async function resolveRepoKeyInto')
+  assert.ok(iFn > 0, '应有三级解析的唯一实现 resolveRepoKeyInto')
+  const iNull = src.indexOf('      return null', iFn)
   assert.ok(iNull > 0, '应有 return null 兜底')
   const before = src.slice(Math.max(0, iNull - 700), iNull)
   assert.ok(before.includes('repoKeys[key]'), '失败前应判断旧缓存')

@@ -8,6 +8,7 @@ import { remoteUrlsOfGitConfig } from "../../../tracker/kernel/git-remote.js";
 function createRepoKeys(deps) {
   const repoKeyCheckedAt = /* @__PURE__ */ Object.create(null);
   const REPO_KEY_TRUST_MS = 6e4;
+  const _repoKeyRechecking = /* @__PURE__ */ Object.create(null);
   const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate } = deps;
   const _gh = createGhExecution({ subprocess, timer, DEFAULT_CWD, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, clearWorkspaceStore, setCache, namingSweepSoon, getChainBackoff, logCtx, reportOutbound, hash8, canonicalKey });
   const { resolveGh, resetGhCache, runGh } = _gh;
@@ -245,12 +246,8 @@ function createRepoKeys(deps) {
     if (seen.length > 1) return { kind: "ambiguous", candidates: seen };
     return { kind: "none" };
   }
-  async function getRepoKey(cwd) {
+  async function resolveRepoKeyInto(key) {
     const rkT0 = Date.now();
-    const key = await canonicalKey(cwd || DEFAULT_CWD);
-    const nowMs = Date.now();
-    const checkedAt = repoKeyCheckedAt[key] || 0;
-    if (repoKeys[key] && nowMs - checkedAt < REPO_KEY_TRUST_MS) return repoKeys[key];
     const root = await getRepoRoot(key);
     const execCwd = root || key;
     const git = await resolveGit();
@@ -308,6 +305,23 @@ function createRepoKeys(deps) {
       return repoKeys[key];
     }
     return null;
+  }
+  async function getRepoKey(cwd) {
+    const key = await canonicalKey(cwd || DEFAULT_CWD);
+    if (repoKeys[key]) {
+      if (Date.now() - (repoKeyCheckedAt[key] || 0) >= REPO_KEY_TRUST_MS && !_repoKeyRechecking[key]) {
+        _repoKeyRechecking[key] = true;
+        void resolveRepoKeyInto(key).catch(function() {
+        }).then(function() {
+          try {
+            delete _repoKeyRechecking[key];
+          } catch (e) {
+          }
+        });
+      }
+      return repoKeys[key];
+    }
+    return await resolveRepoKeyInto(key);
   }
   async function getRepoIdentity(cwd) {
     const key = await canonicalKey(cwd || DEFAULT_CWD);

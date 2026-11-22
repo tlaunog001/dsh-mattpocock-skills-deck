@@ -154,6 +154,8 @@ export function createRepoKeys(deps: RepoKeysDeps) {
   //   而正常工作时这点开销可以忽略（每次重验只跑一条本地 git remote get-url，不起网络请求）。
   const repoKeyCheckedAt: Record<string, number> = Object.create(null)
   const REPO_KEY_TRUST_MS = 60000
+  // 后台重验的去重表：同一个工作区同时只跑一个重验，别让每拍都起一个 git 进程。
+  const _repoKeyRechecking: Record<string, boolean> = Object.create(null)
   const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate } = deps
   // #1429（C8/gh 拆分）：gh 执行体已并入 gh-execution.ts，这里只做组装——gh 专属依赖连同
   // 三个共享小件（reportOutbound、hash8、canonicalKey，两边共用、只许有一份）一起传过去；
@@ -381,19 +383,12 @@ export function createRepoKeys(deps: RepoKeysDeps) {
       return { kind: 'none' }
     }
 
-    async function getRepoKey(cwd?: string) {
+    // #1975：三级本地证据解析的**唯一实现**——首查与后台重验共用这一份，免得两处逻辑漂移。
+    //   命中就写回 repoKeys/repoKeyCheckedAt 并返回；三级都答不上来返回 null。
+    //   但若此前已有旧值，就保留旧值、只把校验时刻推后——不让「git 一时读不到」把仓库身份弄丢，
+    //   那会让整条读链掉进 pending/降级；真正的纠正留给下一次成功重验（origin 变了且读得出来就覆盖）。
+    async function resolveRepoKeyInto(key: string): Promise<RepoKey | null> {
       const rkT0 = Date.now()
-      const key = await canonicalKey(cwd || DEFAULT_CWD)
-      // #1975：缓存**不能永久有效**。原先只要 repoKeys[key] 有值就直接返回、永不重读 origin，
-      //   于是"外部把 origin 改了"这件事对宿主完全不可见——下游就是踩了这个：它把镜像 .git 的
-      //   origin 从已删的 tlaunog001/models 改成 inference-deployment，服务端各处都干净了，
-      //   面板仍拿着缓存里的 models 反复请求（404），read.degraded 打不停；只有重启宿主或走建仓
-      //   流程（publishFlow 里那处 delete）才会清。页面硬刷新也不管用——那是宿主进程内存。
-      //   修法：按工作区记一个校验时刻，超过 REPO_KEY_TRUST_MS 就重验一次（本地 git 命令，不联网）。
-      //   窗口内仍走缓存，避免每次读票都起一个 git 进程。
-      const nowMs = Date.now()
-      const checkedAt = repoKeyCheckedAt[key] || 0
-      if (repoKeys[key] && (nowMs - checkedAt) < REPO_KEY_TRUST_MS) return repoKeys[key]
       // v1.5 T11（map#37 · #38 R1 + #40 R2 输入）：
       //   多远程下 gh 必选 upstream（context/remote.go::remoteNameSortScore upstream(3)>github(2)>origin(1)），
       //   无参 `gh repo view` 永远返回原作者。改为：显式 `git remote get-url origin` + parseGithubRepo 首选，
@@ -446,6 +441,32 @@ export function createRepoKeys(deps: RepoKeysDeps) {
         return repoKeys[key]
       }
       return null
+    }
+
+    async function getRepoKey(cwd?: string) {
+      const key = await canonicalKey(cwd || DEFAULT_CWD)
+      // #1975：缓存**不能永久有效**。原先只要 repoKeys[key] 有值就直接返回、永不重读 origin，
+      //   于是"外部把 origin 改了"这件事对宿主完全不可见——下游就是踩了这个：它把镜像 .git 的
+      //   origin 从已删的 tlaunog001/models 改成 inference-deployment，服务端各处都干净了，
+      //   面板仍拿着缓存里的 models 反复请求（404），read.degraded 打不停；只有重启宿主或走建仓
+      //   流程（publishFlow 里那处 delete）才会清。页面硬刷新也不管用——那是宿主进程内存。
+      //   修法：按工作区记校验时刻，超过 REPO_KEY_TRUST_MS 就在**后台**重验一次（本地 git，不联网）。
+      //   窗口内直接走缓存，免得每次读票都起一个 git 进程。
+      //
+      // #1975 再修：**重验绝不能在调用路径上等**。第一版是「过期就同步重跑 git remote get-url」，
+      //   而 execProc 的超时预算是 30 秒；一旦那次 git 挂住（远端镜像工作区里很容易），所有走
+      //   getRepoKey 的渲染路径一起卡住，界面表现就是「首屏正常、切回页签白屏」（切回正好撞上窗口过期）。
+      //   现在：有旧值就立刻返回旧值，过期只在后台补一次重验，结果写回缓存供下一次用。
+      //   代价是「origin 改了」最多晚一个读取周期才被看到，但渲染永远不会被 git 阻塞。
+      if (repoKeys[key]) {
+        if ((Date.now() - (repoKeyCheckedAt[key] || 0)) >= REPO_KEY_TRUST_MS && !_repoKeyRechecking[key]) {
+          _repoKeyRechecking[key] = true
+          // 不 await、不向外抛错；失败就保持旧值，下一个窗口再试。
+          void resolveRepoKeyInto(key).catch(function () {}).then(function () { try { delete _repoKeyRechecking[key] } catch (e) {} })
+        }
+        return repoKeys[key]
+      }
+      return await resolveRepoKeyInto(key)
     }
 
     // #1566：检查面板「已关联 GitHub 仓库」的取数口。先按既有三级拿仓库钥匙（命中就是唯一身份），
