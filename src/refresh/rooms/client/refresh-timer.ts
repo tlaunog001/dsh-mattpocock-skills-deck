@@ -45,6 +45,7 @@ declare const hydrateFromCache: any;
 declare const snapshotWithoutWorkRoute: any;
 declare const loadOwnWorkRoute: any;
 declare const chainEventRefresh: any;
+declare const maybeAutoRetryChainCooldownOk: any;
 declare const loadChain: any;
 declare const setupPendingOf: any;
 // #1474：链自动复查的判据与入口（实现都在 probe-chain-subscription.js 那一半，这里只调）。
@@ -316,8 +317,20 @@ export const startActiveProbeLoop = function (): void {
         // 是否真算由宿主按退避裁定，人手重查那一路永不降档不受影响。全绿或根本没这一行时 setupPendingOf 为假，不多算。
         try {
           if (setupPending) {
-            if (typeof chainEventRefresh === 'function') chainEventRefresh(st, 'setup-pending').catch(function (): void {});
-            else if (typeof loadChain === 'function') loadChain(st, false, 'setup-pending').catch(function (): void {});
+            // #1975：这条 setup-pending 复查原来**每拍都发**（5 秒一次），完全绕开 maybeAutoRetryChain 的冷却，
+            //   也不看宿主已经算出来的 waitMs。后果：宿主在 chain-backoff 里明确回「not-green-too-soon、
+            //   还得等 ~292 秒」，客户端照旧每 5 秒问一次；每问一次都会跑 preflight(3 gate)+listPage，
+            //   下游实测 read.degraded 稳定 ~13 次/分、不衰减。而 probe.loop 那边早就退到 50 秒了——
+            //   两条通路解耦，退的只是探测，没退这条复查。
+            //   现在与 maybeAutoRetryChain 共用同一份冷却（含宿主 waitMs 的较大值），不再各算各的。
+            var _canGo: boolean = true;
+            try {
+              if (typeof maybeAutoRetryChainCooldownOk === 'function') _canGo = maybeAutoRetryChainCooldownOk(st) === true;
+            } catch (eCd) { _canGo = true; }
+            if (_canGo) {
+              if (typeof chainEventRefresh === 'function') chainEventRefresh(st, 'setup-pending').catch(function (): void {});
+              else if (typeof loadChain === 'function') loadChain(st, false, 'setup-pending').catch(function (): void {});
+            }
           }
         } catch (eSetup) {}
         // #1474：链上任何一步「暂时确认不了」（pending）时，也顺带自己再问一次宿主 —— 不只是初始化那一步。

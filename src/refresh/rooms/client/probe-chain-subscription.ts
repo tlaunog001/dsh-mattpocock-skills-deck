@@ -389,7 +389,7 @@ const _flushDeferredChain = function (st: any): any {
  * 不同工作区或会话各算各的冷却，互不拖累。atByKey 记上一次真正发起的毫秒时刻；
  * inFlightByKey 记这一键上自动复查还在路上。两张表都留在这一层，不挂界面状态、不进快照。
  */
-export const _autoRetryState: any = { atByKey: new Map(), inFlightByKey: new Map() };
+export const _autoRetryState: any = { atByKey: new Map(), inFlightByKey: new Map(), waitMsByKey: new Map() };
 /**
  * 自动复查按哪把钥匙算冷却与单飞：与链求值同一把键（见 _chainKeyOfState 与 _chainScopedKeyOf）。
  * 键算不出来时退到工作区目录本身，保证同一个工作区至少不会互相踩。
@@ -426,6 +426,28 @@ export const _logAutoRetrySkip = function (decision: string, waitMs: number): vo
  *   只绕本地缓存读取（不绕的话读回同一份旧快照，等于没复查），不绕宿主的在途合并、不清 gh 解析缓存。
  * 返回这一次的 Promise（拿不到就返回 null），调用方不用等，失败自己吞掉。
  */
+/**
+ * #1975：只回答「按冷却现在能不能发一次链复查」，不发请求。
+ *
+ * 为什么要单独一个口：`refresh-timer` 的 setup-pending 复查是另一条触发源，原来每拍（5 秒）都直接发，
+ *   完全绕开 maybeAutoRetryChain 的冷却，也不看宿主算出的 waitMs——宿主回「还得等 ~292 秒」时照旧 5 秒问一次，
+ *   每问一次都跑 preflight+listPage，把 read.degraded 顶到 ~13 次/分。现在两条触发源共用这一份判断。
+ *
+ * 注意：这里**只判不记**（不更新 atByKey）——真正发请求的那条路会记，避免只判一次就把冷却窗推后。
+ */
+export const maybeAutoRetryChainCooldownOk = function (st: any): boolean {
+  try {
+    if (!st || !st.cwd) return false;
+    if (!chainPendingOf(st)) return false;
+    var key: string = _autoRetryKeyOf(st);
+    var now: number = Date.now();
+    var hostWait: number = Number(_autoRetryState.waitMsByKey.get(key) || 0);
+    var cd: number = Math.max(STEP_WAIT_MS, isFinite(hostWait) && hostWait > 0 ? hostWait : 0);
+    var at: number = _autoRetryState.atByKey.get(key) || 0;
+    if (cd > 0 && at && now - at < cd) return false;
+    return true;
+  } catch (e) { return true; }
+};
 export const maybeAutoRetryChain = function (st: any): any {
   if (!st || !st.cwd) return null;
   if (!chainPendingOf(st)) return null;
@@ -435,7 +457,14 @@ export const maybeAutoRetryChain = function (st: any): any {
     return null;
   }
   var now: number = Date.now();
-  var cd: number = STEP_WAIT_MS;
+  // #1975：冷却不能只用写死的 STEP_WAIT_MS。
+  //   宿主（chain-backoff 的 verdict）在「不是又快又绿」时已经算出一个明确的 waitMs
+  //   （实测 not-green-too-soon ≈ 292–295 秒），可客户端过去只把它写进 debug 日志、从不采用，
+  //   于是出现「宿主说等 5 分钟、客户端 30 秒就再问一次」——每问一次都跑一遍 preflight(3 gate)+listPage，
+  //   下游实测 read.degraded 稳定 ~13 次/分、不衰减，就是这么来的。
+  //   现在取两者较大值：宿主让等更久就听宿主的；宿主没给（0）仍用本地的 STEP_WAIT_MS 兜底。
+  var hostWait: number = Number(_autoRetryState.waitMsByKey.get(key) || 0);
+  var cd: number = Math.max(STEP_WAIT_MS, isFinite(hostWait) && hostWait > 0 ? hostWait : 0);
   var at: number = _autoRetryState.atByKey.get(key) || 0;
   if (cd > 0 && at && now - at < cd) {
     _logAutoRetrySkip('cooldown', cd - (now - at));
@@ -455,7 +484,15 @@ export const maybeAutoRetryChain = function (st: any): any {
     _autoRetryState.inFlightByKey.delete(key);
     return null;
   }
-  return p.then(function (r: any): any { _autoRetryState.inFlightByKey.delete(key); return r; }, function (): any { _autoRetryState.inFlightByKey.delete(key); return null; });
+  return p.then(function (r: any): any {
+    _autoRetryState.inFlightByKey.delete(key);
+    // #1975：把宿主这一轮给的 waitMs 记下来，供下一次冷却用（hit 是「被退避挡下」那条回包的字段）。
+    try {
+      var w: number = Number(r && r.hit && r.hit.waitMs || 0);
+      if (isFinite(w) && w > 0) _autoRetryState.waitMsByKey.set(key, w); else _autoRetryState.waitMsByKey.delete(key);
+    } catch (eW) {}
+    return r;
+  }, function (): any { _autoRetryState.inFlightByKey.delete(key); return null; });
 };
 /**
  * 面板从藏起来回到可见时，把当前这条链的冷却窗清掉（#1474）。
