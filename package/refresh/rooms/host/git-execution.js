@@ -6,6 +6,8 @@ import { onceRelease, abandonCommand, startWaitTimeout, DISPOSED_MESSAGE } from 
 import { PROC_GRACE_MS } from "../../../shared/time-config/values.js";
 import { remoteUrlsOfGitConfig } from "../../../tracker/kernel/git-remote.js";
 function createRepoKeys(deps) {
+  const repoKeyCheckedAt = /* @__PURE__ */ Object.create(null);
+  const REPO_KEY_TRUST_MS = 6e4;
   const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate } = deps;
   const _gh = createGhExecution({ subprocess, timer, DEFAULT_CWD, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, clearWorkspaceStore, setCache, namingSweepSoon, getChainBackoff, logCtx, reportOutbound, hash8, canonicalKey });
   const { resolveGh, resetGhCache, runGh } = _gh;
@@ -246,7 +248,9 @@ function createRepoKeys(deps) {
   async function getRepoKey(cwd) {
     const rkT0 = Date.now();
     const key = await canonicalKey(cwd || DEFAULT_CWD);
-    if (repoKeys[key]) return repoKeys[key];
+    const nowMs = Date.now();
+    const checkedAt = repoKeyCheckedAt[key] || 0;
+    if (repoKeys[key] && nowMs - checkedAt < REPO_KEY_TRUST_MS) return repoKeys[key];
     const root = await getRepoRoot(key);
     const execCwd = root || key;
     const git = await resolveGit();
@@ -256,6 +260,7 @@ function createRepoKeys(deps) {
         const k = parseGithubRepo(r.text);
         if (k) {
           repoKeys[key] = k;
+          repoKeyCheckedAt[key] = Date.now();
           try {
             if (logCtx) logCtx.fire("info", "repo.resolve.tier", { tier: 1, ok: true, latencyMs: Date.now() - rkT0 });
           } catch (eL) {
@@ -274,6 +279,7 @@ function createRepoKeys(deps) {
           const k = parseGithubRepo(um[1]);
           if (k) {
             repoKeys[key] = k;
+            repoKeyCheckedAt[key] = Date.now();
             try {
               if (logCtx) logCtx.fire("info", "repo.resolve.tier", { tier: 2, ok: true, latencyMs: Date.now() - rkT0 });
             } catch (eL) {
@@ -289,11 +295,20 @@ function createRepoKeys(deps) {
     const ev3 = ev3Urls === null ? { kind: "none" } : identityFromUrls(ev3Urls);
     if (ev3.kind === "identity") {
       repoKeys[key] = { owner: ev3.owner, name: ev3.name };
+      repoKeyCheckedAt[key] = Date.now();
       try {
         if (logCtx) logCtx.fire("info", "repo.resolve.tier", { tier: 3, ok: true, latencyMs: Date.now() - rkT0 });
       } catch (eL) {
       }
       ;
+      return repoKeys[key];
+    }
+    if (repoKeys[key]) {
+      repoKeyCheckedAt[key] = Date.now();
+      try {
+        if (logCtx) logCtx.fire("debug", "repo.resolve.recheck.stale", { tier: 0, ok: true });
+      } catch (eL) {
+      }
       return repoKeys[key];
     }
     return null;
