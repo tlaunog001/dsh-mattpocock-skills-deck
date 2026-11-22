@@ -223,12 +223,36 @@ function createDetectionService({ registry, getPlatform, getFs, getTimers, works
     selection = verdict.selection;
     const choiceSource = verdict.choiceSource;
     let repoHandle = null;
+    let refIdSource = "none";
     try {
-      if (selection && selection.ref) repoHandle = { cwd, refId: selection.ref.refId || "" };
-      else if (typeof resolveRepoHandle === "function") repoHandle = await resolveRepoHandle(handle);
-      else repoHandle = { cwd, refId: selection && selection.backendId ? handle.cwd || "" : "" };
+      if (selection && selection.ref) {
+        repoHandle = { cwd, refId: selection.ref.refId || "" };
+        refIdSource = "selection";
+      } else if (typeof resolveRepoHandle === "function") {
+        repoHandle = await resolveRepoHandle(handle);
+        refIdSource = repoHandle && repoHandle.refId ? "resolver" : "none";
+      } else {
+        repoHandle = { cwd, refId: selection && selection.backendId ? handle.cwd || "" : "" };
+        refIdSource = repoHandle && repoHandle.refId ? "derived" : "none";
+      }
     } catch {
       repoHandle = { cwd, refId: "" };
+      refIdSource = "none";
+    }
+    try {
+      if (logCtx && typeof logCtx.fire === "function") {
+        const h8 = function(t) {
+          try {
+            let h = 5381;
+            for (let i = 0; i < t.length; i++) h = (h << 5) + h + t.charCodeAt(i) >>> 0;
+            return ("0000000" + h.toString(16)).slice(-8);
+          } catch (e) {
+            return "00000000";
+          }
+        };
+        logCtx.fire("debug", "detection.refid.source", { source: refIdSource, hasRefId: !!(repoHandle && repoHandle.refId), cwdHash: h8(String(cwd || "")) });
+      }
+    } catch (eLog) {
     }
     let preflight = null;
     if (selection && selection.backendId && !selection.pending) {

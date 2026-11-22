@@ -184,9 +184,16 @@ async function initProjectInner(handle, input, ctx, trail) {
       "*.sqlite-shm",
       "*.sqlite-wal"
     ].join("\n");
-    const exclPath = String(cwd).replace(/[\\/]+$/, "") + "/.git/info/exclude";
-    await execProcLocal([git, "rev-parse", "--git-dir"], cwd);
-    await execProcLocal([git, "config", "--local", "core.excludesFile", exclPath], cwd);
+    let exclPath = String(cwd).replace(/[\\/]+$/, "") + "/.git/info/exclude";
+    try {
+      const gp = await execProcLocal([git, "rev-parse", "--git-path", "info/exclude"], cwd);
+      const raw = gp && gp.ok && String(gp.text || "").trim() || "";
+      if (raw) {
+        const abs = /^([a-zA-Z]:[\\/]|\/)/.test(raw) ? raw : String(cwd).replace(/[\\/]+$/, "") + "/" + raw;
+        exclPath = abs;
+      }
+    } catch (eGd) {
+    }
     try {
       mkdirSync(String(exclPath).replace(/[\\/][^\\/]+$/, ""), { recursive: true });
       const prev = existsSync(exclPath) ? String(readFileSync(exclPath, "utf8")) : "";
