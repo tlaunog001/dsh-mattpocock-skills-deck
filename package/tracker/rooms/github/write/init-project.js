@@ -7,6 +7,7 @@ import { isOwnershipMismatch, ownershipPathFrom, safeDirectoryCommand } from "..
 import { rawText } from "../../../kernel/preflight.js";
 import { beginWriteTrail, emitRepoInitWrite } from "../support/write-log.js";
 import { GIT_PROBE_TIMEOUT_MS, GITHUB_INIT_TIMEOUT_MS } from "../../../../shared/time-config/values.js";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 function caughtMessage(e, len) {
   const eb = e;
   return String(eb && eb.message || e).slice(0, len);
@@ -17,6 +18,17 @@ async function initProject(handle, input, ctx) {
   const r = await initProjectInner(handle, input, ctx, trail);
   emitRepoInitWrite(ctx, trail, r, t0);
   return r;
+}
+function isRemoteMirrorWorkspace(cwd) {
+  try {
+    if (!cwd) return false;
+    const seg = String(cwd).replace(/\\/g, "/").toLowerCase();
+    if (seg.indexOf("/remote-workspaces/") >= 0) return true;
+    if (seg.indexOf("remote-workspaces/") === 0) return true;
+    return false;
+  } catch (e) {
+    return false;
+  }
 }
 async function initProjectInner(handle, input, ctx, trail) {
   const cwd = handle && handle.cwd || ctx && ctx.cwd || "";
@@ -143,6 +155,16 @@ async function initProjectInner(handle, input, ctx, trail) {
   }
   const usable = await preflightWorkspaceGit(git, cwd);
   if (!usable.ok) return gitFail(usable.text, cwd);
+  if (isRemoteMirrorWorkspace(cwd)) {
+    return {
+      ok: false,
+      error: {
+        kind: KIND_UNKNOWN,
+        message: "这是 dsh-remote 的远端镜像工作区，真仓库在远端，不能在这里新建仓库。请到远端目录里确认 origin（例如 " + (git ? "git -C <远端路径> remote -v" : "git remote -v") + "），或在本地克隆一份真正的仓库再发布。",
+        raw: ""
+      }
+    };
+  }
   try {
     if (usable.notRepoYet) {
       const initR = await execProcLocal([git, "init"], cwd);
@@ -151,6 +173,27 @@ async function initProjectInner(handle, input, ctx, trail) {
   } catch (e) {
     const initR = await execProcLocal([git, "init"], cwd);
     if (!initR.ok) return gitFail(initR.error, cwd);
+  }
+  try {
+    const excl = [
+      ".dsh-remote-meta.json",
+      ".dsh-remote-sync-state.json",
+      ".dsh-mattskillsdeck-cache/",
+      "*.sqlite",
+      "*.sqlite-shm",
+      "*.sqlite-wal"
+    ].join("\n");
+    const exclPath = String(cwd).replace(/[\\/]+$/, "") + "/.git/info/exclude";
+    await execProcLocal([git, "rev-parse", "--git-dir"], cwd);
+    await execProcLocal([git, "config", "--local", "core.excludesFile", exclPath], cwd);
+    try {
+      mkdirSync(String(exclPath).replace(/[\\/][^\\/]+$/, ""), { recursive: true });
+      const prev = existsSync(exclPath) ? String(readFileSync(exclPath, "utf8")) : "";
+      const lines = excl.split("\n").filter((l) => l && prev.indexOf(l) < 0);
+      if (lines.length) appendFileSync(exclPath, (prev && prev.slice(-1) !== "\n" ? "\n" : "") + lines.join("\n") + "\n");
+    } catch (eW) {
+    }
+  } catch (eExcl) {
   }
   const addR = await execProcLocal([git, "add", "."], cwd);
   if (!addR.ok) return gitFail(addR.error, cwd);
