@@ -107,16 +107,21 @@ async function ghPreflight(handle, ctx) {
   const t2 = Date.now();
   try {
     let refId = parseRepoRef(handle, opCtx);
+    let viewErr = null;
     if (!refId) {
       const c2 = ghClient(opCtx);
       const rr = await c2.execGh([...GH_REPO_VIEW_ARGV], { cwd, via: "preflight.repo-view" });
       if (rr.ok) {
         const s = (rr.data.stdout || "").trim();
         if (s && s.includes("/")) refId = s;
+      } else {
+        viewErr = rr.error;
       }
     }
     if (!refId) {
-      emitReadDegraded(opCtx, "preflight", "preflight:repo-view", Date.now() - t2);
+      emitReadDegraded(opCtx, "preflight", "preflight:repo-view", Date.now() - t2, {
+        kind: viewErr && viewErr.kind || ""
+      });
       return { ok: false, error: { kind: ERROR_KIND.NOTFOUND, message: "repo not found: cannot resolve owner/name (no refId and gh repo view failed)", raw: "" } };
     }
     const repo = repoFromRefId(refId);
@@ -127,7 +132,9 @@ async function ghPreflight(handle, ctx) {
     const c = ghClient(opCtx);
     const r = await c.execGh(ghRepoApiArgv(repo.owner, repo.name), { cwd, via: "preflight.api" });
     if (!r.ok) {
-      emitReadDegraded(opCtx, "preflight", "preflight:api", Date.now() - t2);
+      emitReadDegraded(opCtx, "preflight", "preflight:api", Date.now() - t2, {
+        kind: r.error && r.error.kind || ""
+      });
       return { ok: false, error: r.error };
     }
     emitPreflightGatePass(opCtx, 3, Date.now() - t2);
