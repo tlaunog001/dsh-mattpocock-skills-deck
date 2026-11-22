@@ -405,12 +405,22 @@ export function createDetectionService({ registry, getPlatform, getFs, getTimers
         refIdSource = (repoHandle && repoHandle.refId) ? 'derived' : 'none'
       }
     } catch { repoHandle = { cwd, refId: '' }; refIdSource = 'none' }
-    // 只在这一条线记来源（不动常驻的 detection.detect 结论线，避免给它的字段加负担）：
-    //   出问题时先看这行就能判断 refId 该不该信——derived 意味着它是 gh user + 目录名拼的。
+    // 只在这一条线记来源（不动常驻的 detection.detect 结论线，避免给它的字段加负担）。
+    // 级别按「这条值可不可信」分级，而不是一律 debug：
+    //   derived / none 是**不可信**的两种（gh user + 目录名推出来的、或干脆没有），
+    //   正常工作时不该出现、量极小，所以用 info 落下来——事故现场直接能看到。
+    //   selection / resolver 是正常路径，走 debug，不污染常驻日志。
+    //   （下游在 #1974 指出：一律用 debug 等于「最需要它的时候恰好没有」——
+    //     本机默认 debug.enabled=false，事故发生了才发现要开。）
     try {
       if (logCtx && typeof logCtx.fire === 'function') {
         const h8 = function (t: string) { try { let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
-        logCtx.fire('debug', 'detection.refid.source', { source: refIdSource, hasRefId: !!(repoHandle && repoHandle.refId), cwdHash: h8(String(cwd || '')) })
+        // 只有 `derived` 升到 info：它是「既没读到、也没解析出，于是拿 gh user + 目录名拼的」，
+        //   正是事故里那种「看起来有 refId、其实不可信」的值，且正常工作时不该出现。
+        //   `none` 不升：没有仓库的工作区每次探测都是 none（空目录/未初始化都算），升到 info 会刷屏；
+        //   而且「没有 refId」本身不像「有一个错的 refId」那样会骗到人。
+        const suspicious = (refIdSource === 'derived')
+        logCtx.fire(suspicious ? 'info' : 'debug', 'detection.refid.source', { source: refIdSource, hasRefId: !!(repoHandle && repoHandle.refId), cwdHash: h8(String(cwd || '')) })
       }
     } catch (eLog) { /* 记日志不许把探测带崩 */ }
 

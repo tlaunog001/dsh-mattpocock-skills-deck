@@ -42,6 +42,12 @@ test('② refId 来源有明确四档，且写进日志', () => {
   assert.ok(detSrc.includes('refIdSource'), '应把来源带进日志字段')
 })
 
+test('② 不可信的那一档要能在默认配置下看到（不能一律 debug）', () => {
+  // 下游指出：一律 debug 等于「最需要它时恰好没有」（本机默认 debug.enabled=false）
+  assert.ok(detSrc.includes("const suspicious = (refIdSource === 'derived')"), 'derived 应为可疑档')
+  assert.ok(detSrc.includes("suspicious ? 'info' : 'debug'"), '可疑档落 info、其余落 debug')
+})
+
 test('② 来源判定与三条取值分支对应（不是写死）', () => {
   const iSel = detSrc.indexOf("refIdSource = 'selection'")
   const iRes = detSrc.indexOf("refIdSource = (repoHandle && repoHandle.refId) ? 'resolver' : 'none'")
