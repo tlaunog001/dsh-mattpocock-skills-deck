@@ -149,6 +149,11 @@ interface RepoKeysDeps {
 type WorkspaceKeyModule = typeof import('../../../host/workspaceKey.js')
 
 export function createRepoKeys(deps: RepoKeysDeps) {
+  // #1975：repoKeys 的校验时刻（旁路表，不改 repoKeys 的形状，别的读方照旧按引用读它）。
+  //   REPO_KEY_TRUST_MS 取 60 秒：下游那条循环是 5 秒一拍，一分钟内必然重验一次；
+  //   而正常工作时这点开销可以忽略（每次重验只跑一条本地 git remote get-url，不起网络请求）。
+  const repoKeyCheckedAt: Record<string, number> = Object.create(null)
+  const REPO_KEY_TRUST_MS = 60000
   const { subprocess, timer, fs, DEFAULT_CWD, TIMEOUT_MS, repoKeys, repoRoots, getGhPath, setGhPath, getGhLastError, setGhLastError, getPlatform, getWorkspaceStore, setCache, clearWorkspaceStore, namingSweepSoon, getChainBackoff, parseGithubRepo, logCtx, gate, getGate } = deps
   // #1429（C8/gh 拆分）：gh 执行体已并入 gh-execution.ts，这里只做组装——gh 专属依赖连同
   // 三个共享小件（reportOutbound、hash8、canonicalKey，两边共用、只许有一份）一起传过去；
@@ -379,7 +384,16 @@ export function createRepoKeys(deps: RepoKeysDeps) {
     async function getRepoKey(cwd?: string) {
       const rkT0 = Date.now()
       const key = await canonicalKey(cwd || DEFAULT_CWD)
-      if (repoKeys[key]) return repoKeys[key]
+      // #1975：缓存**不能永久有效**。原先只要 repoKeys[key] 有值就直接返回、永不重读 origin，
+      //   于是"外部把 origin 改了"这件事对宿主完全不可见——下游就是踩了这个：它把镜像 .git 的
+      //   origin 从已删的 tlaunog001/models 改成 inference-deployment，服务端各处都干净了，
+      //   面板仍拿着缓存里的 models 反复请求（404），read.degraded 打不停；只有重启宿主或走建仓
+      //   流程（publishFlow 里那处 delete）才会清。页面硬刷新也不管用——那是宿主进程内存。
+      //   修法：按工作区记一个校验时刻，超过 REPO_KEY_TRUST_MS 就重验一次（本地 git 命令，不联网）。
+      //   窗口内仍走缓存，避免每次读票都起一个 git 进程。
+      const nowMs = Date.now()
+      const checkedAt = repoKeyCheckedAt[key] || 0
+      if (repoKeys[key] && (nowMs - checkedAt) < REPO_KEY_TRUST_MS) return repoKeys[key]
       // v1.5 T11（map#37 · #38 R1 + #40 R2 输入）：
       //   多远程下 gh 必选 upstream（context/remote.go::remoteNameSortScore upstream(3)>github(2)>origin(1)），
       //   无参 `gh repo view` 永远返回原作者。改为：显式 `git remote get-url origin` + parseGithubRepo 首选，
@@ -392,7 +406,7 @@ export function createRepoKeys(deps: RepoKeysDeps) {
         const r = await execProc([git, '-C', execCwd, 'remote', 'get-url', 'origin'], execCwd, 'repo-key')
         if (r.ok) {
           const k = parseGithubRepo(r.text)
-          if (k) { repoKeys[key] = k; try { if (logCtx) logCtx.fire('info', 'repo.resolve.tier', { tier: 1, ok: true, latencyMs: Date.now() - rkT0 }) } catch (eL) {}; return k }
+          if (k) { repoKeys[key] = k; repoKeyCheckedAt[key] = Date.now(); try { if (logCtx) logCtx.fire('info', 'repo.resolve.tier', { tier: 1, ok: true, latencyMs: Date.now() - rkT0 }) } catch (eL) {}; return k }
         }
       }
       // Tier 2：.git/config 直读 origin（git 二进制不可用 / `remote get-url` 失败时）
@@ -403,7 +417,7 @@ export function createRepoKeys(deps: RepoKeysDeps) {
           const um = txt.match(/\[remote\s+"origin"\][^[]*url\s*=\s*([^\r\n]+)/)
           if (um) {
             const k = parseGithubRepo(um[1])
-            if (k) { repoKeys[key] = k; try { if (logCtx) logCtx.fire('info', 'repo.resolve.tier', { tier: 2, ok: true, latencyMs: Date.now() - rkT0 }) } catch (eL) {}; return k }
+            if (k) { repoKeys[key] = k; repoKeyCheckedAt[key] = Date.now(); try { if (logCtx) logCtx.fire('info', 'repo.resolve.tier', { tier: 2, ok: true, latencyMs: Date.now() - rkT0 }) } catch (eL) {}; return k }
           }
         } catch (e) { /* 落 Tier 3 */ }
       }
@@ -414,12 +428,22 @@ export function createRepoKeys(deps: RepoKeysDeps) {
       // 远端列表整条读不到时这里同样回落 null（getRepoKey 只回答「有没有唯一身份」）；
       // 要区分「读不到」与「一个都没有」的地方走 getRepoIdentity，它把 null 原样交给求值侧。
       const ev3: RepoIdentityEvidence = ev3Urls === null ? { kind: 'none' } : identityFromUrls(ev3Urls)
-      if (ev3.kind === 'identity') { repoKeys[key] = { owner: ev3.owner, name: ev3.name }; try { if (logCtx) logCtx.fire('info', 'repo.resolve.tier', { tier: 3, ok: true, latencyMs: Date.now() - rkT0 }) } catch (eL) {}; return repoKeys[key] }
+      if (ev3.kind === 'identity') { repoKeys[key] = { owner: ev3.owner, name: ev3.name }; repoKeyCheckedAt[key] = Date.now(); try { if (logCtx) logCtx.fire('info', 'repo.resolve.tier', { tier: 3, ok: true, latencyMs: Date.now() - rkT0 }) } catch (eL) {}; return repoKeys[key] }
       // 三级本地证据都没答上来：如实回 null（#1453）。这里不再退到 gh repo view——那一级是出站，
       // 会花额度，必须放在会话建立之后、由会话的 getRepoKey 能力过裁决与记账（规格 1439 第 5 节）。
       // 调用方按 null 走降级；需要 GitHub 仓库身份的地方会先去开会话，由会话补出 refId。
       // 这里不另记一行日志：本地证据读不到是正常结局（不是出站失败），而会话那一侧的房间
       // 会把它自己的 tier 结果记进 repo.resolve.tier，排查时看那一条更准。
+      //
+      // #1975：但如果这次是「缓存过期后的重验」失败，别把已经答对过的值丢掉——
+      //   宁可继续返回可能过期的旧缓存（并把它标记为新近校验过，避免每拍都重试一遍 git），
+      //   也不要在 git 短暂不可用时突然「认不出仓库」（那会让整条读链掉进 pending/降级）。
+      //   真正的纠正留给下一次成功重验：只要 origin 变了且读得出来，就会覆盖掉旧值。
+      if (repoKeys[key]) {
+        repoKeyCheckedAt[key] = Date.now()
+        try { if (logCtx) logCtx.fire('debug', 'repo.resolve.recheck.stale', { tier: 0, ok: true }) } catch (eL) {}
+        return repoKeys[key]
+      }
       return null
     }
 
