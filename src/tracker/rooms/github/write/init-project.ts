@@ -306,16 +306,30 @@ async function initProjectInner(handle: RepoHandle, input: InitProjectInput, ctx
       '*.sqlite-shm',
       '*.sqlite-wal',
     ].join('\n')
-    const exclPath = String(cwd).replace(/[\\/]+$/, '') + '/.git/info/exclude'
-    await execProcLocal([git, 'rev-parse', '--git-dir'], cwd)
-    // 用 git 自己写，避免依赖进程对 .git/info 目录的判断；失败不阻断（下面还有一道核对）
-    await execProcLocal([git, 'config', '--local', 'core.excludesFile', exclPath], cwd)
+    // `.git/info/exclude` 是 git 本来就会读的本地忽略表，**不需要任何配置**。
+    //   曾经这里还额外写了 `git config --local core.excludesFile <该路径>`——那是有害的：
+    //   core.excludesFile 是仓库级**单值**，写它会把用户自己配的全局忽略表顶掉（用户抱怨的那条）。
+    //   现在只追加文件，不动任何 git config。
+    //   路径以 `git rev-parse --git-dir` 为准：兼容子目录、worktree（.git 是文件）等形态，
+    //   不靠进程对 `.git/info` 目录的猜测。
+    let exclPath = String(cwd).replace(/[\\/]+$/, '') + '/.git/info/exclude'
+    try {
+      // 用 `--git-path info/exclude` 而不是自己拼：git 会直接回答**它真正会读的那份**排除文件。
+      //   拼 --git-dir 在 worktree 下是错的（那里给的是 .git/worktrees/<name>，而 git 读的是主仓
+      //   的 .git/info/exclude），子目录下还会给相对路径。--git-path 三种形态都直接给对。
+      const gp = await execProcLocal([git, 'rev-parse', '--git-path', 'info/exclude'], cwd)
+      const raw = (gp && gp.ok && String((gp as any).text || '').trim()) || ''
+      if (raw) {
+        const abs = /^([a-zA-Z]:[\\/]|\/)/.test(raw) ? raw : String(cwd).replace(/[\\/]+$/, '') + '/' + raw
+        exclPath = abs
+      }
+    } catch (eGd) { /* 拿不到就用默认位置，下面写不进去也不阻断建仓 */ }
     try {
       mkdirSync(String(exclPath).replace(/[\\/][^\\/]+$/, ''), { recursive: true })
       const prev = existsSync(exclPath) ? String(readFileSync(exclPath, 'utf8')) : ''
       const lines = excl.split('\n').filter((l: string) => l && prev.indexOf(l) < 0)
       if (lines.length) appendFileSync(exclPath, (prev && prev.slice(-1) !== '\n' ? '\n' : '') + lines.join('\n') + '\n')
-    } catch (eW) { /* 写不进就只靠上面的 config */ }
+    } catch (eW) { /* 写不进就不挡建仓：宁可这一次没排除，也不能让建仓本身失败 */ }
   } catch (eExcl) { /* 排除规则接不下时不能让建仓本身失败，下面照常 add */ }
   const addR = await execProcLocal([git, 'add', '.'], cwd)
   if (!addR.ok) return gitFail(addR.error, cwd)

@@ -386,11 +386,33 @@ export function createDetectionService({ registry, getPlatform, getFs, getTimers
 
     // repoHandle：轻量化复用 getRepoKey 语义中的 handle → describe ref
     let repoHandle: { cwd: string; refId: string } | null = null
+    // #1974 建议 4：给 refId 记一个**来源**，好让「读到的」与「猜出来的」在日志里分得开。
+    //   真出问题时（例如仓库被误删/误建），光看 refId 有值无法判断它是否可信：
+    //     selection   —— 来自后端探测结论（读到了 origin / 锚文件声明），**可信**
+    //     resolver    —— 由一个解析器算出来的，可信度取决于那个解析器
+    //     derived     —— 既没读到也没解析出，**用 gh user + 目录名推出来的**，最不可信
+    //     none        —— 拿不到任何值（空 refId）
+    let refIdSource = 'none'
     try {
-      if (selection && selection.ref) repoHandle = { cwd, refId: selection.ref.refId || '' }
-      else if (typeof resolveRepoHandle === 'function') repoHandle = await resolveRepoHandle(handle)
-      else repoHandle = { cwd, refId: (selection && selection.backendId) ? (handle.cwd || '') : '' }
-    } catch { repoHandle = { cwd, refId: '' } }
+      if (selection && selection.ref) {
+        repoHandle = { cwd, refId: selection.ref.refId || '' }
+        refIdSource = 'selection'
+      } else if (typeof resolveRepoHandle === 'function') {
+        repoHandle = await resolveRepoHandle(handle)
+        refIdSource = (repoHandle && repoHandle.refId) ? 'resolver' : 'none'
+      } else {
+        repoHandle = { cwd, refId: (selection && selection.backendId) ? (handle.cwd || '') : '' }
+        refIdSource = (repoHandle && repoHandle.refId) ? 'derived' : 'none'
+      }
+    } catch { repoHandle = { cwd, refId: '' }; refIdSource = 'none' }
+    // 只在这一条线记来源（不动常驻的 detection.detect 结论线，避免给它的字段加负担）：
+    //   出问题时先看这行就能判断 refId 该不该信——derived 意味着它是 gh user + 目录名拼的。
+    try {
+      if (logCtx && typeof logCtx.fire === 'function') {
+        const h8 = function (t: string) { try { let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
+        logCtx.fire('debug', 'detection.refid.source', { source: refIdSource, hasRefId: !!(repoHandle && repoHandle.refId), cwdHash: h8(String(cwd || '')) })
+      }
+    } catch (eLog) { /* 记日志不许把探测带崩 */ }
 
     // 惰性 preflight：仅命中且非 pending 时调（Q6）
     let preflight: { ok?: boolean; error?: { kind?: string } } | null = null
