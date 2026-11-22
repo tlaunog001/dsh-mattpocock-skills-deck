@@ -24,8 +24,12 @@ test('#1975 三处写入缓存都必须更新时间戳', () => {
 })
 
 test('#1975 重验失败时保留旧缓存，不突然「认不出仓库」', () => {
-  const i = src.indexOf('if (repoKeys[key]) {\n        repoKeyCheckedAt[key] = Date.now()')
-  assert.ok(i > 0, '失败路径应继续返回旧缓存并刷新校验时刻')
+  // 失败路径必须在 return null 之前，先把旧缓存连同新校验时刻返回去
+  const iNull = src.indexOf('      return null', src.indexOf('async function getRepoKey'))
+  assert.ok(iNull > 0, '应有 return null 兜底')
+  const before = src.slice(Math.max(0, iNull - 700), iNull)
+  assert.ok(before.includes('repoKeys[key]'), '失败前应判断旧缓存')
+  assert.ok(before.includes('repoKeyCheckedAt[key] = Date.now()'), '失败时也要刷新校验时刻')
 })
 
 test('#1975 窗口不应过长（下游一拍 5 秒，必须能在分钟级纠正）', () => {

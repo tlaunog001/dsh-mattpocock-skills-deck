@@ -440,8 +440,9 @@ export function createRepoKeys(deps: RepoKeysDeps) {
       //   也不要在 git 短暂不可用时突然「认不出仓库」（那会让整条读链掉进 pending/降级）。
       //   真正的纠正留给下一次成功重验：只要 origin 变了且读得出来，就会覆盖掉旧值。
       if (repoKeys[key]) {
+        // 不新增日志事件：日志门禁有白名单表（ALLOWED），加一条没人看的调试事件就要动附录+门禁两份，
+        //   收益不抵。这里只把校验时刻推后，避免每拍重试 git。
         repoKeyCheckedAt[key] = Date.now()
-        try { if (logCtx) logCtx.fire('debug', 'repo.resolve.recheck.stale', { tier: 0, ok: true }) } catch (eL) {}
         return repoKeys[key]
       }
       return null

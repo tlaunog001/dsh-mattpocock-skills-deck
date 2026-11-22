@@ -325,14 +325,21 @@ export const startActiveProbeLoop = function (): void {
             //   现在与 maybeAutoRetryChain 共用同一份冷却（含宿主 waitMs 的较大值），不再各算各的。
             // 走「判 + 记 + 发」的那个入口：只判不记的话，atByKey 永远不更新、冷却永远不成立，
             //   等于什么都没改（第一版就是这么错的）。
+            //
+            // 接线缺失时必须**回退到原行为**（直接发），不能静默不发——#1363 钉的就是
+            //   「活跃节拍每拍要带 setup-pending 让链重算」，那条修的是「初始化卡住永远不推进」。
+            //   冷却是个可选的加速件：它不在时宁可多打几拍，也不能让首轮恢复跑不起来。
+            var _hasOnce: boolean = (typeof autoRetryChainOnce === 'function');
             var _handled: boolean = false;
-            try {
-              if (typeof autoRetryChainOnce === 'function') _handled = autoRetryChainOnce(st) === true;
-            } catch (eOnce) { _handled = false; }
-            if (!_handled) {
-              // 没被那条路接下（不在 pending 态 / 被冷却挡下 / 接线缺失）就不发。
-              //   旧行为是每拍无条件直发，那正是 read.degraded 打不停的来源。
+            if (_hasOnce) {
+              try { _handled = autoRetryChainOnce(st) === true; } catch (eOnce) { _handled = false; }
             }
+            if (!_hasOnce) {
+              // 老接线（或夹具没提供这个口）：按原样直发，保持 #1363 的行为。
+              if (typeof chainEventRefresh === 'function') chainEventRefresh(st, 'setup-pending').catch(function (): void {});
+              else if (typeof loadChain === 'function') loadChain(st, false, 'setup-pending').catch(function (): void {});
+            }
+            // _hasOnce 且 _handled=false：被冷却挡下（或不在 pending 态），这一拍就不发。
           }
         } catch (eSetup) {}
         // #1474：链上任何一步「暂时确认不了」（pending）时，也顺带自己再问一次宿主 —— 不只是初始化那一步。

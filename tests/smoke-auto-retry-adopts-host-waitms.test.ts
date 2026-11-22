@@ -26,7 +26,12 @@ test('#1975 回包后记录宿主 waitMs（hit.waitMs）', () => {
 test('#1975 setup-pending 复查走「判+记+发」入口（只判不记等于没改）', () => {
   // 第一版只加了「判」不写 atByKey，冷却永远不成立——这条断言就是防那个坑回潮
   assert.ok(timerSrc.includes('autoRetryChainOnce'), 'setup-pending 应走带记账的入口')
-  assert.ok(!timerSrc.includes("chainEventRefresh(st, 'setup-pending')"), '不得再每拍无条件直发')
+  // 但有例外必须保留：接线缺失（夹具/老接线）时要回退到原样直发，
+  //   否则会打破 #1363「活跃节拍每拍带 setup-pending 让链重算」——那修的是「初始化卡住永远不推进」。
+  assert.ok(timerSrc.includes('_hasOnce'), '应区分「接线在不在」')
+  const iFallback = timerSrc.indexOf('if (!_hasOnce)')
+  const iDirect = timerSrc.indexOf("chainEventRefresh(st, 'setup-pending')")
+  assert.ok(iFallback > 0 && iDirect > iFallback, '直发只应出现在接线缺失的回退分支里')
 })
 
 test('#1975 autoRetryChainOnce 必须记账（atByKey + waitMsByKey）', () => {
