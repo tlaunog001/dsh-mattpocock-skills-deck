@@ -49,9 +49,12 @@ function unknownIn(obj, allowed) {
 }
 export function parseSettings(doc) {
   if (!isRecord(doc)) return fail("bad-shape", "本机设置文件里放的不是一组「名字 → 值」，读到的是清单或一段文字");
-  const strange = unknownIn(doc, TOP_KEYS);
-  if (strange.length > 0) {
-    return fail("unknown-keys", "本机设置文件里有多出来的名字，核不认识它们：" + strange.join("、"), strange);
+  const warnings = [];
+  const strangeTop = unknownIn(doc, TOP_KEYS);
+  const preservedTop = {};
+  if (strangeTop.length > 0) {
+    for (const k of strangeTop) preservedTop[k] = doc[k];
+    warnings.push("unknown-keys：本机设置文件里有多出来的名字，核不认识它们，已原样保留：" + strangeTop.join("、"));
   }
   if (!isInt(doc["version"])) return fail("bad-shape", "本机设置文件里的 version 必须是数字");
   const version = doc["version"];
@@ -60,14 +63,18 @@ export function parseSettings(doc) {
       ok: true,
       value: doc,
       readonly: true,
-      warnings: ["version-newer：这份文件是版本 " + version + "，核只认识到版本 1，可以读来展示，不许写回去。请升级插件。"]
+      warnings: warnings.concat(["version-newer：这份文件是版本 " + version + "，核只认识到版本 1，可以读来展示，不许写回去。请升级插件。"])
     };
   }
   if (version !== SETTINGS_KNOWN_VERSION) return fail("bad-shape", "本机设置文件里的 version 现在只认 1");
   const uiRaw = doc["ui"] === void 0 ? {} : doc["ui"];
   if (!isRecord(uiRaw)) return fail("bad-shape", "本机设置文件里的 ui 必须是一组「名字 → 值」");
   const uiStrange = unknownIn(uiRaw, UI_KEYS);
-  if (uiStrange.length > 0) return fail("unknown-keys", "本机设置文件 ui 节里有多出来的名字：" + uiStrange.join("、"), uiStrange);
+  const preservedUi = {};
+  if (uiStrange.length > 0) {
+    for (const k of uiStrange) preservedUi[k] = uiRaw[k];
+    warnings.push("unknown-keys：ui 节里有多出来的名字，已原样保留：" + uiStrange.join("、"));
+  }
   for (const k of ["stateFilter", "sortKey", "sortDir"]) {
     if (uiRaw[k] !== void 0 && typeof uiRaw[k] !== "string") {
       return fail("bad-shape", "本机设置文件 ui 节里的 " + k + " 必须是一段文字");
@@ -93,8 +100,10 @@ export function parseSettings(doc) {
     const entry = wsRaw[root];
     if (!isRecord(entry)) return fail("bad-shape", "本机设置文件 workspaces 节里「" + root + "」的值必须是一组开关");
     const entryStrange = unknownIn(entry, WS_KEYS);
+    const preservedEntry = {};
     if (entryStrange.length > 0) {
-      return fail("unknown-keys", "本机设置文件 workspaces 节里「" + root + "」有多出来的名字：" + entryStrange.join("、"), entryStrange);
+      for (const k of entryStrange) preservedEntry[k] = entry[k];
+      warnings.push("unknown-keys：workspaces 节里「" + root + "」有多出来的名字，已原样保留：" + entryStrange.join("、"));
     }
     if (entry["unopened"] !== void 0 && typeof entry["unopened"] !== "boolean") {
       return fail("bad-shape", "本机设置文件 workspaces 节里「" + root + "」的 unopened 只能是 true 或省略（true 表示这条记录先按工作区名单上的路径记着，那个工作区还没打开过）");
@@ -130,6 +139,7 @@ export function parseSettings(doc) {
       }
       norm[k] = entry[k];
     }
+    for (const k of Object.keys(preservedEntry)) norm[k] = preservedEntry[k];
     workspaces[root] = norm;
   }
   const debugRaw = doc["debug"] === void 0 ? {} : doc["debug"];
@@ -150,22 +160,25 @@ export function parseSettings(doc) {
     if (typeof tplRaw[name] !== "string") return fail("bad-shape", "本机设置文件 templates 里「" + name + "」的值必须是一段文字");
     templates[name] = tplRaw[name];
   }
+  const uiOut = {
+    stateFilter: uiRaw["stateFilter"] === void 0 ? "" : uiRaw["stateFilter"],
+    sortKey: uiRaw["sortKey"] === void 0 ? "" : uiRaw["sortKey"],
+    sortDir: uiRaw["sortDir"] === void 0 ? "" : uiRaw["sortDir"],
+    labelClicks: clicks
+  };
+  for (const k of Object.keys(preservedUi)) uiOut[k] = preservedUi[k];
   return {
     ok: true,
     value: {
       version: 1,
-      ui: {
-        stateFilter: uiRaw["stateFilter"] === void 0 ? "" : uiRaw["stateFilter"],
-        sortKey: uiRaw["sortKey"] === void 0 ? "" : uiRaw["sortKey"],
-        sortDir: uiRaw["sortDir"] === void 0 ? "" : uiRaw["sortDir"],
-        labelClicks: clicks
-      },
+      ui: uiOut,
       workspaces,
       debug: { enabled, sampleRate },
-      templates
+      templates,
+      ...preservedTop
     },
     readonly: false,
-    warnings: []
+    warnings
   };
 }
 export function stringifySettings(value) {

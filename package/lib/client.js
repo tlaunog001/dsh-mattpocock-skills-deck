@@ -284,9 +284,9 @@ const PortalOverlay = function(props, children) {
   return portalTop(h("div", props || {}, children));
 };
 
-    const DSW_VERSION = "v1.9.0-beta.36";
+    const DSW_VERSION = "v1.9.0-beta.37";
     const DSW_REPO_URL = "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck";
-    const DSW_BUILD_COMMIT = "c2b214050099c82e69c228cf6a535599fccf1762";
+    const DSW_BUILD_COMMIT = "c7cc08bdd2e8c7e6973b7f83ba700ed801a8a200";
     const CONTAINER_ACCENT = { map: "#c084fc", spec: "#1D4ED8" };
 const CONTAINER_TINT = { map: "rgba(188,140,255,.07)", spec: "rgba(29,78,216,.10)" };
 const CONTAINER_CHIP_CLASS = { map: "dsws-chip-m", spec: "dsws-chip-s" };
@@ -5598,6 +5598,7 @@ const L_PANEL = Object.freeze({
     "banner.deckReopenOk": "开启",
     "banner.deckReopenTitle": "重新打开 MattSkillsDeck",
     "banner.expandDeck": "展开MattSkillsDeck",
+    "banner.expandFail": "展开没生效：本机设置文件读不出来或写不进去（插件会在日志里记下原因）。设置文件里的字段若比当前插件版本新，请先升级插件再试。",
     "banner.expandShort": "展开",
     "banner.foldDeck": "收起MattSkillsDeck",
     "banner.foldShort": "收起",
@@ -5961,6 +5962,7 @@ const L_PANEL = Object.freeze({
     "banner.deckReopenOk": "Reopen",
     "banner.deckReopenTitle": "Reopen MattSkillsDeck",
     "banner.expandDeck": "Expand MattSkillsDeck",
+    "banner.expandFail": "Could not expand — the local settings file cannot be read or written (the plugin logs the reason). If the file contains fields newer than this plugin version, upgrade the plugin first.",
     "banner.expandShort": "Expand",
     "banner.foldDeck": "Collapse MattSkillsDeck",
     "banner.foldShort": "Collapse",
@@ -63795,8 +63797,30 @@ const deckDoorExpand = function(st, el) {
       }
       return;
     }
-    setDeckStatusBar(st && st.cwd, true);
+    let ok = false;
+    try {
+      ok = setDeckStatusBar(st && st.cwd, true) === true;
+    } catch (eSet) {
+      ok = false;
+    }
+    try {
+      st.deckExpandFail = ok !== true;
+    } catch (eFlag) {
+    }
+    try {
+      emit(st);
+    } catch (eEmit) {
+    }
   } catch (e) {
+  }
+};
+const deckDoorExpandFailTake = function(st) {
+  try {
+    if (!st || st.deckExpandFail !== true) return false;
+    st.deckExpandFail = false;
+    return true;
+  } catch (e) {
+    return false;
   }
 };
 const deckDoorFold = function(st) {
@@ -65940,6 +65964,18 @@ const StatusBar = (props) => {
         Ic({ n: "chev-up", size: 10 }),
         h("span", null, tr("banner.expandDeck"))
       ])),
+      // #1975：展开失败要说出来。旧行为是「点了没反应」——真实事故里连点 67 次、界面零反馈。
+      //   读一次就清（deckDoorExpandFailTake），失败不常驻；成功路径一个字都不多渲染。
+      (function() {
+        let failed = false;
+        try {
+          failed = typeof deckDoorExpandFailTake === "function" && deckDoorExpandFailTake(s) === true;
+        } catch (eF) {
+          failed = false;
+        }
+        if (!failed) return null;
+        return h("div", { role: "status", "aria-live": "polite", style: { fontSize: 10, color: "#f87171", marginLeft: 8, lineHeight: 1.4, maxWidth: 420 } }, tr("banner.expandFail"));
+      })(),
       modalSeat,
       deckDoorConfirmEl(h, s),
       deckDoorCloseConfirmEl(h, s),
