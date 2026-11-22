@@ -77,14 +77,21 @@ const PREFLIGHT_GATE_REASONS = Object.freeze({
 function isPreflightGate(gate) {
   return PREFLIGHT_GATES.indexOf(gate) >= 0;
 }
-function emitReadDegraded(ctx, op, reason, latencyMs) {
+function emitReadDegraded(ctx, op, reason, latencyMs, detail) {
   guardEmit(ctx, (c) => {
-    c.logEvent("warn", "read.degraded", {
+    const fields = {
       op: String(op || ""),
       reason: String(reason || ""),
       latencyMs: ms(latencyMs),
       opId: String(c.opId || "")
-    });
+    };
+    try {
+      if (detail && detail.errorKind != null && String(detail.errorKind) !== "") fields.errorKind = String(detail.errorKind);
+      if (detail && detail.errorHash != null && String(detail.errorHash) !== "") fields.errorHash = String(detail.errorHash);
+      if (detail && detail.exitCode != null && String(detail.exitCode) !== "" && String(detail.exitCode) !== "undefined") fields.exitCode = Number(detail.exitCode);
+    } catch (eD) {
+    }
+    c.logEvent("warn", "read.degraded", fields);
   });
 }
 function emitPreflightGatePass(ctx, gate, latencyMs) {

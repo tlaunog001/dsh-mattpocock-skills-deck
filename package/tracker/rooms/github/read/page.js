@@ -93,7 +93,9 @@ async function listIssuesPage(repo, filter, opts, ctx) {
       if (since) args.push("-F", `since=${since}`);
       r = await c.execGh(args, { cwd: ctx && ctx.cwd, via: "listPage.gql" });
       if (!r.ok) {
-        emitReadDegraded(ctx, "listPage", "listPage:transport", Date.now() - t0);
+        emitReadDegraded(ctx, "listPage", "listPage:transport", Date.now() - t0, {
+          kind: r.error && r.error.kind || ""
+        });
         return { ok: false, error: r.error };
       }
       try {
