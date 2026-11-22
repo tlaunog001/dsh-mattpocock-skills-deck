@@ -63,3 +63,26 @@ test('#1974 判据行为：各平台路径形态（用真源码跑，不是复�
     assert.equal(isRemote(p), want, JSON.stringify(p) + ' 期望 ' + want)
   }
 })
+
+test('#1974 判据不得误拦：用户自己的 remote-workspaces 同名目录不是镜像', () => {
+  const start = src.indexOf('function isRemoteMirrorWorkspace')
+  const end = src.indexOf('/** 开仓发布的本体')
+  const fnSrc = src.slice(start, end).trim()
+    .replace(/^function isRemoteMirrorWorkspace\(cwd: string\): boolean \{/, 'return function(cwd){')
+    .replace(/\n\}\s*$/, '\n}')
+  const isRemote = new Function(fnSrc)() as (cwd: string) => boolean
+  // 这些是正当的建仓目标，判据必须放行；只认 remote-workspaces 那一段会误拦。
+  const allow: Array<[string, string]> = [
+    ['/Users/admin/projects/remote-workspaces/x', '用户普通项目（名字撞上）'],
+    ['/Users/admin/projects/my-remote-workspaces-tool', '名字里含该段'],
+    ['/Users/admin/remote-workspaces-backup/x', '前缀相似'],
+    ['C:\\work\\remote-workspaces-old\\p', 'Windows 近似名'],
+  ]
+  for (const [p, label] of allow) assert.equal(isRemote(p), false, '不应误拦：' + label)
+  // 这些必须拦（含 DSH_HOME 自定义成不含 .dsh 的部署形态）
+  const block: Array<[string, string]> = [
+    ['/Users/admin/.dsh/remote-workspaces/192.168.10.201-jx-22/qqq', '标准镜像'],
+    ['/opt/dsh/remote-workspaces/10.0.0.1-jx-22/qqq', '自定义 DSH_HOME 兜底'],
+  ]
+  for (const [p, label] of block) assert.equal(isRemote(p), true, '必须拦截：' + label)
+})

@@ -104,9 +104,16 @@ function isRemoteMirrorWorkspace(cwd: string): boolean {
   try {
     if (!cwd) return false
     const seg = String(cwd).replace(/\\/g, '/').toLowerCase()
-    if (seg.indexOf('/remote-workspaces/') >= 0) return true
-    // 相对路径形态（极少见）：前缀就是它
-    if (seg.indexOf('remote-workspaces/') === 0) return true
+    // 必须落在 DSH_HOME 的 .dsh/remote-workspaces/ 之下，才算 dsh-remote 的镜像。
+    //   只认 "remote-workspaces" 这一段会误拦正当目录（例如用户自己的
+    //   ~/projects/remote-workspaces/x——那是个普通项目，在那里建仓完全合法）。
+    //   锚定 ".dsh" 之后两边都稳：镜像一定带这个前缀（DSH_HOME 默认就是 <home>/.dsh，
+    //   可用 DSH_HOME 覆盖但那种部署同样会带 .dsh 目录名），而普通项目几乎不会叫 .dsh。
+    if (seg.indexOf('/.dsh/remote-workspaces/') >= 0) return true
+    // DSH_HOME 被改成不含 .dsh 的自定义目录时兜底：仍要求 remote-workspaces 前面是路径分隔，
+    //   且整条路径形态与镜像根一致（<root>/remote-workspaces/<host>-<user>-<port>/<name>，至少四级）。
+    const m = seg.match(/\/([^/]+)\/remote-workspaces\/[^/]+\/[^/]+\/?$/)
+    if (m && /^-?[a-z0-9._:\-]+$/.test(m[1])) return true
     return false
   } catch (e) { return false }
 }
