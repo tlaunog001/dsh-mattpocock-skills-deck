@@ -316,7 +316,13 @@ const noteProbeReply = function(res, background) {
     resetProbeBackoff();
     return;
   }
-  if (!res || res.ok !== true) return;
+  if (!res || res.ok !== true) {
+    if (_probeBackoff.step < BACKOFF_FACTORS.length - 1) {
+      _probeBackoff.step += 1;
+      logProbeBackoff("backoff");
+    }
+    return;
+  }
   if (res.changed === true || res.mode === "deferred" || res.mode === "failed" || res.mode === "stale-dropped") {
     resetProbeBackoff();
     return;

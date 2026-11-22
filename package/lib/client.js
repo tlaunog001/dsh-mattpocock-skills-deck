@@ -284,9 +284,9 @@ const PortalOverlay = function(props, children) {
   return portalTop(h("div", props || {}, children));
 };
 
-    const DSW_VERSION = "v1.9.0-beta.43";
+    const DSW_VERSION = "v1.9.0-beta.44";
     const DSW_REPO_URL = "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck";
-    const DSW_BUILD_COMMIT = "6cbe164e6790d2ee6b30ae8db29ab6e6ef22a648";
+    const DSW_BUILD_COMMIT = "a7e4d3fd2847a4ac76c2feebbc5c9794b1cef2bf";
     const CONTAINER_ACCENT = { map: "#c084fc", spec: "#1D4ED8" };
 const CONTAINER_TINT = { map: "rgba(188,140,255,.07)", spec: "rgba(29,78,216,.10)" };
 const CONTAINER_CHIP_CLASS = { map: "dsws-chip-m", spec: "dsws-chip-s" };
@@ -32041,7 +32041,13 @@ const noteProbeReply = function(res, background) {
     resetProbeBackoff();
     return;
   }
-  if (!res || res.ok !== true) return;
+  if (!res || res.ok !== true) {
+    if (_probeBackoff.step < BACKOFF_FACTORS.length - 1) {
+      _probeBackoff.step += 1;
+      logProbeBackoff("backoff");
+    }
+    return;
+  }
   if (res.changed === true || res.mode === "deferred" || res.mode === "failed" || res.mode === "stale-dropped") {
     resetProbeBackoff();
     return;
