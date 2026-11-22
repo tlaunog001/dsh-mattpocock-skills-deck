@@ -206,18 +206,27 @@ export async function ghPreflight(handle: RepoHandle, ctx: OpContext): Promise<P
   try {
     let refId = parseRepoRef(handle, opCtx)
     // 若无 refId，尝试 gh repo view 取当前仓库（与 host/index.js getRepoKey 同源）
+    // #1975：rr 提到外层，失败分支要拿它的 kind 进日志（原来在外层拿不到）。
+    let viewErr: any = null
     if (!refId) {
       const c = ghClient(opCtx)
       const rr = await c.execGh([...GH_REPO_VIEW_ARGV], { cwd, via: 'preflight.repo-view' })
       if (rr.ok) {
         const s = (rr.data.stdout || '').trim()
         if (s && s.includes('/')) refId = s
+      } else {
+        viewErr = rr.error
       }
     }
     if (!refId) {
       // 无仓库上下文 → 视为 not-found（无法判定仓库可达）。这条是房内自己推出来的结论：
       // 上面那条 `gh repo view` 真失败时，它的原文在它自己的失败结果里，这里手里没有原文，留空串。
-      emitReadDegraded(opCtx, 'preflight', 'preflight:repo-view', Date.now() - t2)
+      // #1975：这条失败常常是「建连丢包」（下游实测 latencyMs=15,043ms ≈ SSH connectTimeoutMs 15s），
+      //   而不是它自己的判断逻辑。原来不传 kind，现场只能看到「preflight:repo-view + 空 kind」，
+      //   分不清是连不上还是仓库真不存在。这里把上游那条 gh 失败结果的 kind 带出来。
+      emitReadDegraded(opCtx, 'preflight', 'preflight:repo-view', Date.now() - t2, {
+        kind: (viewErr && (viewErr as any).kind) || '',
+      })
       return { ok: false, error: { kind: ERROR_KIND.NOTFOUND, message: 'repo not found: cannot resolve owner/name (no refId and gh repo view failed)', raw: '' } }
     }
     const repo = repoFromRefId(refId)
@@ -231,7 +240,10 @@ export async function ghPreflight(handle: RepoHandle, ctx: OpContext): Promise<P
     const r = await c.execGh(ghRepoApiArgv(repo.owner, repo.name), { cwd, via: 'preflight.api' })
     if (!r.ok) {
       // 分类已在 client 层归一，此处直接返回
-      emitReadDegraded(opCtx, 'preflight', 'preflight:api', Date.now() - t2)
+      // #1975：同样把 kind 带出来（这条是三项门禁的第三项，失败时最需要区分「连不上」与「404」）。
+      emitReadDegraded(opCtx, 'preflight', 'preflight:api', Date.now() - t2, {
+        kind: (r.error && (r.error as any).kind) || '',
+      })
       return { ok: false, error: r.error }
     }
     // 三关全过也记一行：不然「探测走到底了」在日志里只是三行长得一样的 gh.exec，读的人看不出走到哪。
