@@ -20,14 +20,25 @@ test('#1974 存在镜像判据函数，且不依赖 remote-exec 服务', () => {
   assert.ok(body.includes('remote-workspaces'), '应认 dsh-remote 的镜像根布局')
 })
 
-test('#1974 镜像工作区在建仓前被拒（且在 preflight 之后、git add 之前）', () => {
+test('#1974 / deck#1 镜像工作区在 preflight 之后、git add 之前做落点判定', () => {
   const iPre = src.indexOf('await preflightWorkspaceGit(git, cwd)')
   const iGuard = src.indexOf('if (isRemoteMirrorWorkspace(cwd))')
   const iAdd = src.indexOf("'add', '.'")
-  assert.ok(iGuard > 0, '应有拦截')
-  assert.ok(iPre > 0 && iGuard > iPre, '拦截要在 preflight 之后')
-  assert.ok(iAdd > iGuard, '拦截必须在 git add . 之前（否则已经把文件扫进去了）')
-  assert.ok(src.includes('不能在这里新建仓库'), '应给出可操作的拒绝文案')
+  assert.ok(iGuard > 0, '应有落点判定')
+  assert.ok(iPre > 0 && iGuard > iPre, '判定要在 preflight 之后')
+  assert.ok(iAdd > iGuard, '判定必须在 git add . 之前（否则已经把文件扫进去了）')
+})
+
+test('deck#1 命令已改道到远端时放行建仓（不再无条件拒绝）', () => {
+  // 旧行为：命中镜像就 return 失败。新行为：先实测 pwd 落点，改道了才继续往下建仓。
+  const guardStart = src.indexOf('if (isRemoteMirrorWorkspace(cwd))')
+  const guardEnd = src.indexOf('// 1. git init', guardStart)
+  const guard = src.slice(guardStart, guardEnd)
+  assert.ok(guard.includes("execProcLocal(['pwd'], cwd)"), '要用 pwd 实测执行落点，不猜配置')
+  assert.ok(guard.includes('stillInMirror'), '要用落点是否仍在镜像内做判据')
+  assert.ok(guard.includes('请先启用 dsh-deck-remote-exec'), '仍在本地时报错要指明改道插件')
+  // 无条件拒绝的老文案必须消失，否则「远端初始化」这条路依旧被堵死
+  assert.ok(!src.includes('真仓库在远端，不能在这里新建仓库'), '不得保留无条件拒绝文案')
 })
 
 test('#1974 git add 之前写入 DSH 内部产物的硬排除', () => {

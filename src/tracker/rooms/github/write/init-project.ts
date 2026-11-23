@@ -270,14 +270,27 @@ async function initProjectInner(handle: RepoHandle, input: InitProjectInput, ctx
   //   含 `.dsh-remote-meta.json`（内网主机/账号/路径）与插件快照库，一旦推送不可逆。
   //   真仓库在远端，应当去远端确认 origin，而不是在镜像里造一个新的。
   //   （触发条件不限于用户点初始化：setup-pending 自动链在插件重载后会自己跑，实测可达。）
+  // #1974 + dsh-mattpocock-skills-deck#1：远端镜像工作区里**可以**建仓，前提是命令确实
+  //   落在远端执行（装了 dsh-deck-remote-exec 时，ctx.exec 被改道到远端，git init / gh repo
+  //   create 都在远端跑，建出来的就是真仓库）。以前这里无条件拒绝，于是「在远端工程目标上
+  //   初始化」这条路被堵死。
+  //   保留的护栏：如果命令仍在**本机**执行（没装改道插件），在镜像里建仓会把镜像内容
+  //   （含 .dsh-remote-meta.json 这类内网元数据）推到用户账号下，不可逆 —— 这时仍然拒绝。
+  //   判据不猜配置，直接实测执行落点：跑一次 pwd，得到的是镜像我方路径就是没改道。
   if (isRemoteMirrorWorkspace(cwd)) {
-    return {
-      ok: false,
-      error: {
-        kind: KIND_UNKNOWN,
-        message: '这是 dsh-remote 的远端镜像工作区，真仓库在远端，不能在这里新建仓库。请到远端目录里确认 origin（例如 ' + (git ? 'git -C <远端路径> remote -v' : 'git remote -v') + '），或在本地克隆一份真正的仓库再发布。',
-        raw: '',
-      },
+    const probe = await execProcLocal(['pwd'], cwd)
+    const execText = String((probe && (probe as any).text) || '').replace(/\\/g, '/').trim()
+    // 改道后 pwd 给的是远端路径；没改道时它原样回镜像路径。
+    const stillInMirror = !execText || execText === String(cwd).replace(/\\/g, '/').replace(/\/+$/, '')
+    if (!probe.ok || stillInMirror) {
+      return {
+        ok: false,
+        error: {
+          kind: KIND_UNKNOWN,
+          message: '这是 dsh-remote 的远端镜像工作区，而命令当前仍在本机执行：在这里建仓会把镜像内容（含 .dsh-remote-meta.json 等内网元数据）推到远端仓库，且不可逆。请先启用 dsh-deck-remote-exec（让命令改道到远端）再发布；也可以到远端目录里确认 origin（例如 ' + (git ? 'git -C <远端路径> remote -v' : 'git remote -v') + '）。',
+          raw: execText,
+        },
+      }
     }
   }
 
