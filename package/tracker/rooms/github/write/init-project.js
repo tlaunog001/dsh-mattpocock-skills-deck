@@ -157,14 +157,19 @@ async function initProjectInner(handle, input, ctx, trail) {
   const usable = await preflightWorkspaceGit(git, cwd);
   if (!usable.ok) return gitFail(usable.text, cwd);
   if (isRemoteMirrorWorkspace(cwd)) {
-    return {
-      ok: false,
-      error: {
-        kind: KIND_UNKNOWN,
-        message: "这是 dsh-remote 的远端镜像工作区，真仓库在远端，不能在这里新建仓库。请到远端目录里确认 origin（例如 " + (git ? "git -C <远端路径> remote -v" : "git remote -v") + "），或在本地克隆一份真正的仓库再发布。",
-        raw: ""
-      }
-    };
+    const probe = await execProcLocal(["pwd"], cwd);
+    const execText = String(probe && probe.text || "").replace(/\\/g, "/").trim();
+    const stillInMirror = !execText || execText === String(cwd).replace(/\\/g, "/").replace(/\/+$/, "");
+    if (!probe.ok || stillInMirror) {
+      return {
+        ok: false,
+        error: {
+          kind: KIND_UNKNOWN,
+          message: "这是 dsh-remote 的远端镜像工作区，而命令当前仍在本机执行：在这里建仓会把镜像内容（含 .dsh-remote-meta.json 等内网元数据）推到远端仓库，且不可逆。请先启用 dsh-deck-remote-exec（让命令改道到远端）再发布；也可以到远端目录里确认 origin（例如 " + (git ? "git -C <远端路径> remote -v" : "git remote -v") + "）。",
+          raw: execText
+        }
+      };
+    }
   }
   try {
     if (usable.notRepoYet) {
