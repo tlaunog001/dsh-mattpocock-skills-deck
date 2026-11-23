@@ -30,7 +30,7 @@ export     const TicketRow = React.memo(({ st, g, t, indent, colorOf }: any) => 
       const cx = React.useContext(DswsCtx)
       const h = cx ? cx.h : React.createElement
       const openBlocker = function (b: any) { const bt = g.m.tickets.find(function (x: any) { return x.number === b }); return bt && bt.state === 'OPEN' }
-      const blocked = t.state === 'OPEN' && t.blockedBy.some(openBlocker)
+      const blocked = t.state === 'OPEN' && (t.blockedBy || []).some(openBlocker)
       const subItem = (icon: any, color: any, text: any) => h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 3, color: color, minWidth: 0 } }, [
         Ic({ n: icon, size: 11 }),
         h(Tip, { content: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [h('div', { style: { fontSize: 10, color: '#8b8b95', lineHeight: '14px' } }, tr('tip.header.text')), h('div', { style: { fontSize: 11, color: '#e6edf3', lineHeight: '16px', wordBreak: 'break-word', whiteSpace: 'normal' } }, text)]) }, h('span', { className: 'dsws-ellip', style: { maxWidth: 200 } }, text)),

@@ -286,7 +286,7 @@ const PortalOverlay = function(props, children) {
 
     const DSW_VERSION = "v1.9.0-beta.51";
     const DSW_REPO_URL = "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck";
-    const DSW_BUILD_COMMIT = "8d468132a1094084555be5c92f806cd250a5253c";
+    const DSW_BUILD_COMMIT = "f95610aafaafb4b770d53b2fcd8e053284ecae66";
     const CONTAINER_ACCENT = { map: "#c084fc", spec: "#1D4ED8" };
 const CONTAINER_TINT = { map: "rgba(188,140,255,.07)", spec: "rgba(29,78,216,.10)" };
 const CONTAINER_CHIP_CLASS = { map: "dsws-chip-m", spec: "dsws-chip-s" };
@@ -27770,7 +27770,7 @@ const compute = (st) => {
         claimed.push(t);
         return;
       }
-      if (t.blockedBy.some(openBlocker)) blocked.push(t);
+      if ((t.blockedBy || []).some(openBlocker)) blocked.push(t);
       else frontier.push(t);
     });
     return { m, open, closed, frontier, claimed, blocked };
@@ -67497,7 +67497,7 @@ const TicketRow = React.memo(({ st, g, t, indent, colorOf }) => {
     });
     return bt && bt.state === "OPEN";
   };
-  const blocked = t.state === "OPEN" && t.blockedBy.some(openBlocker);
+  const blocked = t.state === "OPEN" && (t.blockedBy || []).some(openBlocker);
   const subItem = (icon, color, text) => h("span", { style: { display: "inline-flex", alignItems: "center", gap: 3, color, minWidth: 0 } }, [
     Ic({ n: icon, size: 11 }),
     h(Tip, { content: h("div", { style: { display: "flex", flexDirection: "column", gap: 2 } }, [h("div", { style: { fontSize: 10, color: "#8b8b95", lineHeight: "14px" } }, tr("tip.header.text")), h("div", { style: { fontSize: 11, color: "#e6edf3", lineHeight: "16px", wordBreak: "break-word", whiteSpace: "normal" } }, text)]) }, h("span", { className: "dsws-ellip", style: { maxWidth: 200 } }, text))
