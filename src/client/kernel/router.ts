@@ -76,6 +76,58 @@ export const DECK_NATIVE_TYPE_ID: string = 'dsh-mattpocock-skills-deck/deck:map'
 // 空壳没有背景的话，那几帧里这一格显示的是底下透出来的东西，紧接着才被面板整块盖住。
 // 所以空壳与面板根节点共用同一档底色：从第一帧起就是面板已经在、内容还没到。
 // 注意这里改的是第一帧画什么，那两跳是为了不让点击白等，不要顺手删。
+// #1976 右侧 tab 白屏兜底：这一格曾经整块空白，且 Console 里什么都没有。
+//   查下来是 DSH 槽位框架的「退位」机制：注册的组件只要渲染抛错一次，
+//   框架就把它记进 abdicated（WeakSet，永不移除），之后 entriesOfSlot 一律跳过它，
+//   于是这一格永久画成 <div data-slot-error="...">（空 div、无文字、无报错），
+//   直到重启宿主才恢复——现场表现就是「重启后能显示、几秒后白屏」。
+//   框架那层不能改，能改的是我们自己别再抛出去：包一层错误边界，
+//   把错误就地画成一句人话 + 一行技术细节，既不再退位，也把根因留在界面上。
+// 基类兜底：真浏览器里 React.Component 一定在；但若干门禁用「剥 export + eval」加载本文件，
+//   那种独立作用域里的 React 替身往往只 stub 了 useState/useEffect，没有 Component。
+//   缺失时落到一个最小等价类，class 仍能定义、openPanel 等纯函数照常可测；错误边界只在真渲染时起作用。
+const DeckBoundaryBase: any = (React && React.Component) ? React.Component : class {
+  props: any; state: any;
+  constructor(props: any) { this.props = props; this.state = { err: null } }
+  setState(s: any): void { try { this.state = Object.assign({}, this.state, typeof s === 'function' ? s(this.state) : s) } catch (e) {} }
+};
+class DeckTabBoundary extends DeckBoundaryBase {
+  constructor(props: any) {
+    super(props)
+    this.state = { err: null }
+  }
+  static getDerivedStateFromError(err: any): any {
+    return { err: err }
+  }
+  componentDidCatch(err: any, info: any): void {
+    // 先记日志（排查时按 event 找）；再留一句在界面上，不必开 DevTools。
+    try {
+      log('error', 'panel.render.crashed', {
+        stage: 'tab-body',
+        errName: (err && err.name) ? String(err.name) : '',
+        errMsg: (err && err.message) ? String(err.message).slice(0, 200) : '',
+        hasComponentStack: !!(info && info.componentStack),
+      })
+    } catch (eL) {}
+  }
+  render(): any {
+    const err: any = this.state.err
+    if (!err) return this.props.children
+    const msg: string = (err && err.message) ? String(err.message) : String(err)
+    const stack: string = (err && err.stack) ? String(err.stack) : ''
+    return h('div', { className: 'dsws-hold', 'data-dsws-crashed': '1', style: { padding: '16px 14px', overflow: 'auto' } }, [
+      h('div', { key: 't', className: 'dsws-banner warn', style: { fontWeight: 700 } }, tr('panel.renderCrashed')),
+      h('div', { key: 'm', className: 'dsws-banner bad', style: { fontFamily: 'var(--dsw-font-mono, monospace)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, msg),
+      h('div', { key: 'h', style: { fontSize: 10, color: 'var(--dsw-alias-label-caption,#8b8b95)', lineHeight: 1.5, marginBottom: 8 } }, tr('panel.renderCrashedHint')),
+      h('button', { key: 'b', className: 'dsws-btn dsws-hov', 'data-press': 'button', 'data-log': 'panel.render.crashed.retry', onClick: () => { try { this.setState({ err: null }) } catch (e) {} }, style: { fontSize: 11, padding: '4px 10px' } }, tr('panel.renderCrashedRetry')),
+      stack ? h('details', { key: 's', style: { marginTop: 10 } }, [
+        h('summary', { key: 'ss', style: { fontSize: 10, color: 'var(--dsw-alias-label-caption,#8b8b95)', cursor: 'pointer' } }, tr('panel.renderCrashedDetail')),
+        h('pre', { key: 'sp', style: { fontSize: 9, color: 'var(--dsw-alias-label-caption,#8b8b95)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 4 } }, stack.slice(0, 2000)),
+      ]) : null,
+    ])
+  }
+}
+
 export const DeckSidebarTab = function (props: any): any {
   // 会话号由原生右栏就近给：注册内容体槽位时写了 inject(sessionId)，宿主在渲染这一格时把它交进来。
   const sessionId: any = (props && props.sessionId) || undefined;
@@ -99,7 +151,8 @@ export const DeckSidebarTab = function (props: any): any {
     return h('div', { className: 'dsws-deckclosed' }, tr('panel.deckClosed'));
   }
   if (!ready) return h('div', { className: 'dsws-hold' });
-  return h('div', { className: 'dsws-hold' }, h(DetailsDock, { sessionId: sessionId }));
+  // #1976：面板本体裹一层错误边界（理由见上面 DeckTabBoundary 的文件内说明）。
+  return h('div', { className: 'dsws-hold' }, h(DeckTabBoundary, null, h(DetailsDock, { sessionId: sessionId })));
 };
 // 右栏标签条上那枚标题：内容就是面板名。
 export const DeckNativeTabTitle = function (): any { return h('span', null, tr('panel.title')); };

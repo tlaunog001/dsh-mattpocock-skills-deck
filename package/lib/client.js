@@ -284,9 +284,9 @@ const PortalOverlay = function(props, children) {
   return portalTop(h("div", props || {}, children));
 };
 
-    const DSW_VERSION = "v1.9.0-beta.50";
+    const DSW_VERSION = "v1.9.0-beta.51";
     const DSW_REPO_URL = "https://github.com/FeatherHunter/dsh-mattpocock-skills-deck";
-    const DSW_BUILD_COMMIT = "51049a3d78aaa65a9a2b469f67bdb113c3d3faea";
+    const DSW_BUILD_COMMIT = "820811e06d4df1581a79af6a07cedf4ebff9874c";
     const CONTAINER_ACCENT = { map: "#c084fc", spec: "#1D4ED8" };
 const CONTAINER_TINT = { map: "rgba(188,140,255,.07)", spec: "rgba(29,78,216,.10)" };
 const CONTAINER_CHIP_CLASS = { map: "dsws-chip-m", spec: "dsws-chip-s" };
@@ -5808,6 +5808,10 @@ const L_PANEL = Object.freeze({
     "panel.noRepoTitle": "当前工作区不是 Git 仓库 —— 请先 git init 或进入仓库目录",
     "panel.openUnavailable": "面板没打开：宿主现在没有提供 DSH 右侧边栏的控制器，面板暂时没有落点。",
     "panel.refreshing": "刷新中…",
+    "panel.renderCrashed": "面板渲染出错了",
+    "panel.renderCrashedDetail": "技术细节",
+    "panel.renderCrashedHint": "这是本插件自己的渲染错误，不是你的数据有问题。点重试可以重新挂载；如果一直出错，请把下面那行错误信息发给我们。",
+    "panel.renderCrashedRetry": "重试",
     "panel.repoLoading": "正在读取仓库信息…",
     "panel.repoSync.guardHint": "创建按钮已禁用",
     "panel.repoSync.syncing": "正在同步仓库信息…",
@@ -6172,6 +6176,10 @@ const L_PANEL = Object.freeze({
     "panel.noRepoTitle": "Current workspace is not a Git repo — run git init or open a repo directory",
     "panel.openUnavailable": "The panel did not open: the host is not offering its right-sidebar controller right now, so there is nowhere to put the panel.",
     "panel.refreshing": "Refreshing…",
+    "panel.renderCrashed": "Panel failed to render",
+    "panel.renderCrashedDetail": "Technical details",
+    "panel.renderCrashedHint": "This is a rendering error inside the plugin, not a problem with your data. Click Retry to remount; if it keeps failing, send us the error line below.",
+    "panel.renderCrashedRetry": "Retry",
     "panel.repoLoading": "Reading repository info…",
     "panel.repoSync.guardHint": "Create button disabled",
     "panel.repoSync.syncing": "Syncing repository info…",
@@ -32133,7 +32141,10 @@ const noteProbeReply = function(res, background) {
   }
 };
 
-    const panelClock = { t0: 0, renderT0: 0, commitMs: -1, fitMs: 0 };
+    var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+const panelClock = { t0: 0, renderT0: 0, commitMs: -1, fitMs: 0 };
 const panelNow = function() {
   try {
     if (typeof performance !== "undefined" && performance && typeof performance.now === "function") return performance.now();
@@ -32149,6 +32160,61 @@ const logPanelStage = function(stage, ms) {
 };
 const DECK_NATIVE_TAB_KIND = "dsh-mattpocock-skills-deck:deck-map";
 const DECK_NATIVE_TYPE_ID = "dsh-mattpocock-skills-deck/deck:map";
+const DeckBoundaryBase = React && React.Component ? React.Component : class {
+  constructor(props) {
+    __publicField(this, "props");
+    __publicField(this, "state");
+    this.props = props;
+    this.state = { err: null };
+  }
+  setState(s) {
+    try {
+      this.state = Object.assign({}, this.state, typeof s === "function" ? s(this.state) : s);
+    } catch (e) {
+    }
+  }
+};
+class DeckTabBoundary extends DeckBoundaryBase {
+  constructor(props) {
+    super(props);
+    this.state = { err: null };
+  }
+  static getDerivedStateFromError(err) {
+    return { err };
+  }
+  componentDidCatch(err, info) {
+    try {
+      log("error", "panel.render.crashed", {
+        stage: "tab-body",
+        errName: err && err.name ? String(err.name) : "",
+        errMsg: err && err.message ? String(err.message).slice(0, 200) : "",
+        hasComponentStack: !!(info && info.componentStack)
+      });
+    } catch (eL) {
+    }
+  }
+  render() {
+    const err = this.state.err;
+    if (!err) return this.props.children;
+    const msg = err && err.message ? String(err.message) : String(err);
+    const stack = err && err.stack ? String(err.stack) : "";
+    return h("div", { className: "dsws-hold", "data-dsws-crashed": "1", style: { padding: "16px 14px", overflow: "auto" } }, [
+      h("div", { key: "t", className: "dsws-banner warn", style: { fontWeight: 700 } }, tr("panel.renderCrashed")),
+      h("div", { key: "m", className: "dsws-banner bad", style: { fontFamily: "var(--dsw-font-mono, monospace)", whiteSpace: "pre-wrap", wordBreak: "break-word" } }, msg),
+      h("div", { key: "h", style: { fontSize: 10, color: "var(--dsw-alias-label-caption,#8b8b95)", lineHeight: 1.5, marginBottom: 8 } }, tr("panel.renderCrashedHint")),
+      h("button", { key: "b", className: "dsws-btn dsws-hov", "data-press": "button", "data-log": "panel.render.crashed.retry", onClick: () => {
+        try {
+          this.setState({ err: null });
+        } catch (e) {
+        }
+      }, style: { fontSize: 11, padding: "4px 10px" } }, tr("panel.renderCrashedRetry")),
+      stack ? h("details", { key: "s", style: { marginTop: 10 } }, [
+        h("summary", { key: "ss", style: { fontSize: 10, color: "var(--dsw-alias-label-caption,#8b8b95)", cursor: "pointer" } }, tr("panel.renderCrashedDetail")),
+        h("pre", { key: "sp", style: { fontSize: 9, color: "var(--dsw-alias-label-caption,#8b8b95)", whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: 4 } }, stack.slice(0, 2e3))
+      ]) : null
+    ]);
+  }
+}
 const DeckSidebarTab = function(props) {
   const sessionId = props && props.sessionId || void 0;
   const tabCwd = sessionId ? getCwdSync(sessionId) : "";
@@ -32179,7 +32245,7 @@ const DeckSidebarTab = function(props) {
     return h("div", { className: "dsws-deckclosed" }, tr("panel.deckClosed"));
   }
   if (!ready) return h("div", { className: "dsws-hold" });
-  return h("div", { className: "dsws-hold" }, h(DetailsDock, { sessionId }));
+  return h("div", { className: "dsws-hold" }, h(DeckTabBoundary, null, h(DetailsDock, { sessionId })));
 };
 const DeckNativeTabTitle = function() {
   return h("span", null, tr("panel.title"));

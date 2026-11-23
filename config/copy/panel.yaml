@@ -177,6 +177,10 @@ zh:
   panel.closeDetailTitle: 关闭详情
   panel.openUnavailable: 面板没打开：宿主现在没有提供 DSH 右侧边栏的控制器，面板暂时没有落点。
   panel.deckClosed: 这个工作区的 deck 工具箱已经关了；在设置页把它打开之后，右侧面板里才会显示内容。
+  panel.renderCrashed: 面板渲染出错了
+  panel.renderCrashedHint: "这是本插件自己的渲染错误，不是你的数据有问题。点重试可以重新挂载；如果一直出错，请把下面那行错误信息发给我们。"
+  panel.renderCrashedRetry: 重试
+  panel.renderCrashedDetail: 技术细节
   panel.newWayfinder: 新建需求
   panel.newWayfinderTitle: 点一下弹出两张卡：探索地图或实施地图，由你自己选
   panel.newBug: + bug
@@ -556,6 +560,10 @@ en:
   panel.closeDetailTitle: Close details
   panel.openUnavailable: "The panel did not open: the host is not offering its right-sidebar controller right now, so there is nowhere to put the panel."
   panel.deckClosed: "Deck tools are off for this workspace; turn them back on in settings to show the panel content again."
+  panel.renderCrashed: "Panel failed to render"
+  panel.renderCrashedHint: "This is a rendering error inside the plugin, not a problem with your data. Click Retry to remount; if it keeps failing, send us the error line below."
+  panel.renderCrashedRetry: "Retry"
+  panel.renderCrashedDetail: "Technical details"
   panel.newWayfinder: New Requirement
   panel.newWayfinderTitle: "Opens two cards: Explore map or Implementation map - you pick which route"
   panel.newBug: + BUG

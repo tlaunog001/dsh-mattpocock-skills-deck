@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-22T19:04:50.789Z",
+  "generatedAt": "2026-11-23T04:00:46.875Z",
   "generatedBy": "node scripts/gate-map.mts",
-  "chainLength": 601,
-  "gateCount": 601,
-  "attributedGates": 545,
+  "chainLength": 602,
+  "gateCount": 602,
+  "attributedGates": 546,
   "unattributedGates": 56,
   "buildOutputOnlyGates": 21,
   "completionRecordedGates": 143,
@@ -7453,6 +7453,21 @@
       "reason": "归属来自 文件头 // 门禁归属: 注释（共 1 条）"
     },
     {
+      "step": "node tests/verify-1976-deck-tab-error-boundary.ts",
+      "file": "tests/verify-1976-deck-tab-error-boundary.ts",
+      "guards": [
+        "src/client/kernel/router.ts"
+      ],
+      "dirs": [
+        "src/client/kernel"
+      ],
+      "unattributed": false,
+      "buildOutputOnly": false,
+      "completionRecord": false,
+      "expectedAssertions": 0,
+      "reason": "归属来自 文件头 // 门禁归属: 注释（共 1 条）"
+    },
+    {
       "step": "node tests/verify-3-workspace-switch.ts",
       "file": "tests/verify-3-workspace-switch.ts",
       "guards": [
@@ -14675,6 +14690,7 @@
       "node tests/verify-1896-issue-detail-vm.ts",
       "node tests/verify-1897-pr-page-vm.ts",
       "node tests/verify-1923-closed-container.ts",
+      "node tests/verify-1976-deck-tab-error-boundary.ts",
       "node tests/verify-423-title-clamp.ts",
       "node tests/verify-544-standalone-blocked.ts",
       "node tests/verify-599-merged-pr.ts",
